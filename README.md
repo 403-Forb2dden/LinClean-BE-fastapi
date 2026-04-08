@@ -256,7 +256,7 @@ Spring                                FastAPI (본 엔진)
   │                                       │
   │                                       │ (분석 완료)
   │  POST /internal/analysis-result       │
-  │  X-Internal-Token: <token>            │
+  │  X-Internal-Api-Key: <key>            │
   │  { ... AnalysisResultCallback ... }   │
   │◄──────────────────────────────────────┤
   │                                       │
@@ -264,9 +264,11 @@ Spring                                FastAPI (본 엔진)
   ├──────────────────────────────────────►│
 ```
 
-모든 호출에는 `X-Internal-Token` 헤더가 포함되어야 하며, Spring 은 이 헤더가
+모든 호출에는 `X-Internal-Api-Key` 헤더가 포함되어야 하며, Spring 은 이 헤더가
 없거나 값이 일치하지 않는 요청을 거부합니다. 외부에서 `/internal/*` 경로를
-직접 호출할 수 없게 하기 위함입니다.
+직접 호출할 수 없게 하기 위함입니다. 이 값은 동적으로 발급·만료되는 토큰이
+아니라, 두 백엔드가 환경변수로 공유하는 **정적 사전 공유 키(pre-shared key)**
+입니다.
 
 ### Spring 콜백 메시지 정의
 
@@ -277,7 +279,7 @@ Spring                                FastAPI (본 엔진)
 | 헤더 | 필수 | 설명 |
 |------|------|------|
 | `Content-Type` | ✓ | `application/json` |
-| `X-Internal-Token` | ✓ | 두 백엔드가 공유하는 사전 합의 토큰 |
+| `X-Internal-Api-Key` | ✓ | 두 백엔드가 환경변수로 공유하는 사전 공유 키 |
 | `X-Request-ID` | ✓ | 원 요청의 request id 를 그대로 echo (분산 추적용) |
 
 **Body — 성공 (`AnalysisResultCallback`):**
