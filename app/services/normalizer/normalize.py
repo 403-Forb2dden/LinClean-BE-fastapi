@@ -55,6 +55,8 @@ def normalize_url(raw_url: str) -> NormalizeResult:
         raise NormalizationError(message=f"지원하지 않는 스킴: {scheme}")
 
     hostname = parsed.hostname or ""
+    if ":" in hostname:
+        raise NormalizationError(message="IPv6 주소는 지원하지 않습니다.")
     hostname = _normalize_idn(hostname.lower())
     if not hostname:
         raise NormalizationError(message="호스트가 비어있습니다.")
