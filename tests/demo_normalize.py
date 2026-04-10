@@ -1,6 +1,6 @@
-"""URL normalization demo.
+"""URL 정규화 데모.
 
-Usage:
+사용법:
     python -m tests.demo_normalize
 """
 

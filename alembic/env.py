@@ -15,8 +15,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# SQLite + Alembic: enable batch mode so ALTER TABLE migrations work,
-# since SQLite has very limited native ALTER support.
+# SQLite는 ALTER TABLE 지원이 빈약해서 batch 모드 필수.
 RENDER_AS_BATCH = True
 
 

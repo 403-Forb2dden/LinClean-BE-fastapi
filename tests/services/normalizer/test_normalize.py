@@ -1,4 +1,4 @@
-"""normalize_url unit tests."""
+"""normalize_url 단위 테스트."""
 
 import pytest
 from app.core.exceptions import NormalizationError

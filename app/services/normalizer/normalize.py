@@ -1,7 +1,7 @@
-"""URL canonicalization — pipeline stage 1.
+"""URL 정규화 — 파이프라인 1단계.
 
-Produces a canonical form so downstream stages (threat DB lookup,
-heuristics, content analysis) can compare URLs consistently.
+위협 DB 조회, 휴리스틱, 콘텐츠 분석 등 후속 단계에서
+URL을 일관되게 비교할 수 있도록 정규 형태로 변환함.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from app.schemas.analysis import NormalizeResult
 _DEFAULT_PORTS: dict[str, int] = {"http": 80, "https": 443, "ftp": 21}
 _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https", "ftp"})
 
-# RFC 3986 §2.3
 _UNRESERVED: frozenset[str] = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 )
@@ -27,7 +26,7 @@ _PCT_ENCODED_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
 
 def normalize_url(raw_url: str) -> NormalizeResult:
-    """Return a canonical NormalizeResult, or raise NormalizationError."""
+    """정규화된 NormalizeResult 반환. 실패 시 NormalizationError."""
     original = raw_url.strip()
     if not original:
         raise NormalizationError(message="빈 URL입니다.")
@@ -35,8 +34,8 @@ def normalize_url(raw_url: str) -> NormalizeResult:
     cleaned = _CONTROL_CHAR_RE.sub("", original)
     cleaned = unicodedata.normalize("NFC", cleaned)
 
-    # Scheme must be resolved before length check — prepending adds bytes.
-    # Simple "://" check misses cases like "example.com/path://weird".
+    # 길이 체크 전에 스킴 확정해야 함 — 스킴 붙이면 바이트 늘어남.
+    # 단순 "://" 체크는 "example.com/path://weird" 같은 케이스 놓침.
     if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', cleaned):
         cleaned = "https://" + cleaned
 
@@ -62,8 +61,8 @@ def normalize_url(raw_url: str) -> NormalizeResult:
     if not hostname:
         raise NormalizationError(message="호스트가 비어있습니다.")
 
-    # Reassembling netloc from parsed.hostname implicitly drops userinfo
-    # (RFC 3986 §3.2.1), which is abused for phishing (google.com@evil.com).
+    # parsed.hostname으로 netloc 재조립하면 userinfo 자동 제거됨.
+    # 피싱에 악용되는 패턴임 (google.com@evil.com).
     try:
         port = parsed.port
     except ValueError as e:
@@ -81,7 +80,7 @@ def normalize_url(raw_url: str) -> NormalizeResult:
 
 
 def _normalize_idn(hostname: str) -> str:
-    """Convert unicode hostname to punycode for threat DB compatibility."""
+    """유니코드 호스트명을 punycode로 변환. 위협 DB 매칭 호환용."""
     try:
         return hostname.encode("idna").decode("ascii")
     except UnicodeError:
@@ -92,8 +91,8 @@ def _normalize_path(raw_path: str) -> str:
     path = raw_path or "/"
     path = _normalize_pct_encoding(path)
 
-    # RFC treats //a and /a as different resources, but attackers insert
-    # extra slashes to dodge threat DB pattern matching.
+    # RFC상 //a와 /a는 다른 리소스지만, 공격자가 슬래시 추가해서
+    # 위협 DB 패턴 매칭 우회하는 케이스 방지.
     path = re.sub(r"/{2,}", "/", path)
 
     path = _resolve_dot_segments(path)
@@ -101,7 +100,7 @@ def _normalize_path(raw_path: str) -> str:
 
 
 def _resolve_dot_segments(path: str) -> str:
-    """RFC 3986 §5.2.4"""
+    """dot segment(. / ..) 해소."""
     segments = path.split("/")
     resolved: list[str] = []
     for seg in segments:
@@ -118,7 +117,7 @@ def _resolve_dot_segments(path: str) -> str:
 
 
 def _normalize_pct_encoding(value: str) -> str:
-    """Decode unreserved (%41->A), uppercase reserved hex (%2f->%2F)."""
+    """비예약 문자 디코딩(%41->A), 예약 문자 hex 대문자화(%2f->%2F)."""
     if not value:
         return value
 

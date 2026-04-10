@@ -16,7 +16,7 @@ def _drop_color_message_key(_: Any, __: str, event_dict: EventDict) -> EventDict
 
 
 def configure_logging() -> None:
-    """Wire structlog as the single output path for all loggers."""
+    """structlog를 모든 로거의 단일 출력 경로로 설정."""
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
     shared_processors: list[Processor] = [
@@ -60,7 +60,7 @@ def configure_logging() -> None:
     root.handlers = [handler]
     root.setLevel(settings.log_level)
 
-    # Quiet noisy libs; route through root handler
+    # 로그 시끄러운 라이브러리 억제, root 핸들러로 통합
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.handlers = []
