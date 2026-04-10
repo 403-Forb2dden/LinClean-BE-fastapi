@@ -67,6 +67,10 @@ class TestScheme:
         result = normalize_url("example.com/path")
         assert result.normalized_url == "https://example.com/path"
 
+    def test_scheme_like_string_in_path_gets_scheme_prepended(self) -> None:
+        result = normalize_url("example.com/path://weird")
+        assert result.normalized_url.startswith("https://example.com/")
+
     def test_unsupported_scheme_raises(self) -> None:
         with pytest.raises(NormalizationError, match="지원하지 않는 스킴"):
             normalize_url("ftp2://example.com")

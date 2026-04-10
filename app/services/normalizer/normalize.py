@@ -36,7 +36,8 @@ def normalize_url(raw_url: str) -> NormalizeResult:
     cleaned = unicodedata.normalize("NFC", cleaned)
 
     # Scheme must be resolved before length check — prepending adds bytes.
-    if "://" not in cleaned:
+    # Simple "://" check misses cases like "example.com/path://weird".
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', cleaned):
         cleaned = "https://" + cleaned
 
     max_len = settings.normalizer_max_url_length
