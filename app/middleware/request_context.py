@@ -12,12 +12,7 @@ REQUEST_ID_HEADER = "X-Request-ID"
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Bind a request_id + access log entry to every request.
-
-    - Reuses an inbound `X-Request-ID` if present, else generates one.
-    - Binds it into structlog contextvars so all logs in the request carry it.
-    - Emits a single structured access log line per request.
-    """
+    """Assign a request ID and emit a structured access log per request."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())

@@ -1,10 +1,8 @@
-"""normalize_url 단위 테스트."""
+"""normalize_url unit tests."""
 
 import pytest
 from app.core.exceptions import NormalizationError
 from app.services.normalizer.normalize import normalize_url
-
-# ---- 입력 검증 ---------------------------------------------------------------
 
 
 class TestInputValidation:
@@ -33,22 +31,16 @@ class TestInputValidation:
             normalize_url(long_url)
 
     def test_max_length_boundary_passes(self) -> None:
-        # 정확히 1024자 — 통과해야 함
         padding = 1024 - len("https://example.com/")
         url = "https://example.com/" + "a" * padding
         result = normalize_url(url)
         assert result.normalized_url.startswith("https://example.com/")
 
     def test_max_length_checked_after_scheme_prepend(self) -> None:
-        # 스킴 없이 입력하면 "https://" 가 붙으므로, 보정 후 길이로 검사해야 함
         padding = 1024 - len("https://") - len("example.com/")
         url_without_scheme = "example.com/" + "a" * padding
-        # 스킴 보정 후 정확히 1024자 → 통과
         result = normalize_url(url_without_scheme)
         assert result.normalized_url.startswith("https://example.com/")
-
-
-# ---- 원본 보존 ---------------------------------------------------------------
 
 
 class TestOriginalPreservation:
@@ -60,9 +52,6 @@ class TestOriginalPreservation:
         result = normalize_url("HTTP://EXAMPLE.COM:80/Path#frag")
         assert result.original_url == "HTTP://EXAMPLE.COM:80/Path#frag"
         assert result.normalized_url == "http://example.com/Path"
-
-
-# ---- 스킴 -------------------------------------------------------------------
 
 
 class TestScheme:
@@ -87,9 +76,6 @@ class TestScheme:
         assert result.normalized_url.startswith("ftp://")
 
 
-# ---- 호스트 -----------------------------------------------------------------
-
-
 class TestHost:
     def test_lowercase_host(self) -> None:
         result = normalize_url("https://EXAMPLE.COM/")
@@ -100,7 +86,6 @@ class TestHost:
             normalize_url("https://")
 
     def test_userinfo_stripped_for_phishing(self) -> None:
-        # google.com@evil.com → 실제 호스트는 evil.com
         result = normalize_url("https://google.com@evil.com/path")
         assert "evil.com" in result.normalized_url
         assert "google.com@" not in result.normalized_url
@@ -109,9 +94,6 @@ class TestHost:
         result = normalize_url("https://user:pass@example.com/api")
         assert "user:pass@" not in result.normalized_url
         assert "example.com/api" in result.normalized_url
-
-
-# ---- 포트 -------------------------------------------------------------------
 
 
 class TestPort:
@@ -132,9 +114,6 @@ class TestPort:
         assert ":8080" in result.normalized_url
 
 
-# ---- 경로 -------------------------------------------------------------------
-
-
 class TestPath:
     def test_empty_path_becomes_slash(self) -> None:
         result = normalize_url("https://example.com")
@@ -145,7 +124,6 @@ class TestPath:
         assert "/Path/To/Page" in result.normalized_url
 
     def test_double_slash_collapsed(self) -> None:
-        # 보안: 공격자가 //를 삽입해 위협 DB 패턴 매칭을 우회하는 것을 방지
         result = normalize_url("https://example.com//a//b")
         assert "//" not in result.normalized_url.split("://", 1)[1]
 
@@ -166,9 +144,6 @@ class TestPath:
         assert result.normalized_url == "https://example.com/a/d"
 
 
-# ---- 프래그먼트 -------------------------------------------------------------
-
-
 class TestFragment:
     def test_fragment_removed(self) -> None:
         result = normalize_url("https://example.com/page#section")
@@ -180,22 +155,16 @@ class TestFragment:
         assert "q=1" in result.normalized_url
 
 
-# ---- 퍼센트 인코딩 ----------------------------------------------------------
-
-
 class TestPercentEncoding:
     def test_unreserved_decoded(self) -> None:
-        # %41 = 'A' (unreserved) → 디코딩
         result = normalize_url("https://example.com/%41%42%43")
         assert "/ABC" in result.normalized_url
 
     def test_tilde_decoded(self) -> None:
-        # %7E = '~' (unreserved)
         result = normalize_url("https://example.com/%7Euser")
         assert "/~user" in result.normalized_url
 
     def test_reserved_hex_uppercased(self) -> None:
-        # %2f = '/' (reserved) → %2F 대문자 통일
         result = normalize_url("https://example.com/path%2fmore")
         assert "%2F" in result.normalized_url
 
@@ -204,7 +173,6 @@ class TestPercentEncoding:
         assert "%2F" in result.normalized_url
 
     def test_space_encoding_uppercased(self) -> None:
-        # %20 = ' ' (not unreserved) → %20 유지 (이미 대문자)
         result = normalize_url("https://example.com/my%20page")
         assert "%20" in result.normalized_url
 
@@ -213,31 +181,22 @@ class TestPercentEncoding:
         assert "q=abc" in result.normalized_url
 
     def test_params_encoding_normalized(self) -> None:
-        # path params(;)도 path, query와 동일하게 퍼센트 인코딩 정돈
         result = normalize_url("https://example.com/path;%7eparam?q=1")
         assert ";~param" in result.normalized_url
 
 
-# ---- IDN (퓨니코드) ---------------------------------------------------------
-
-
 class TestIDN:
     def test_unicode_to_punycode(self) -> None:
-        # 유니코드 도메인 → 퓨니코드로 통일 (외부 위협 DB 호환)
         result = normalize_url("https://☃.com/")
         assert "xn--" in result.normalized_url
 
     def test_punycode_stays_punycode(self) -> None:
-        # 이미 퓨니코드이면 그대로 유지
         result = normalize_url("https://xn--n3h.com/")
         assert "xn--n3h.com" in result.normalized_url
 
     def test_ascii_domain_unchanged(self) -> None:
         result = normalize_url("https://example.com/")
         assert result.normalized_url == "https://example.com/"
-
-
-# ---- 통합 -------------------------------------------------------------------
 
 
 class TestIntegration:

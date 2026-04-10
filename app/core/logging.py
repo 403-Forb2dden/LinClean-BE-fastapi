@@ -16,11 +16,7 @@ def _drop_color_message_key(_: Any, __: str, event_dict: EventDict) -> EventDict
 
 
 def configure_logging() -> None:
-    """Configure structlog + stdlib logging.
-
-    All logs (including from uvicorn, sqlalchemy, etc.) are routed through
-    structlog so we get consistent JSON or pretty output everywhere.
-    """
+    """Wire structlog as the single output path for all loggers."""
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
     shared_processors: list[Processor] = [

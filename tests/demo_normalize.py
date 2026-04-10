@@ -1,4 +1,4 @@
-"""URL 정규화 데모
+"""URL normalization demo.
 
 Usage:
     python -m tests.demo_normalize
@@ -9,61 +9,55 @@ from __future__ import annotations
 from app.core.exceptions import NormalizationError
 from app.services.normalizer import normalize_url
 
-DIVIDER = "─" * 72
+DIVIDER = "-" * 72
 
 CASES: list[tuple[str, str]] = [
-    # (설명, 입력 URL)
-    ("스킴·호스트 소문자화 + 경로 대소문자 보존", "HTTP://EXAMPLE.COM/Path/To/Page"),
-    ("기본 포트 제거 (80, 443)", "https://example.com:443/secure"),
-    ("비기본 포트 유지", "https://example.com:8080/api"),
-    ("프래그먼트 제거", "https://example.com/page#section-2"),
-    ("스킴 없으면 https 보정", "example.com/hello"),
-    ("퍼센트 인코딩: unreserved 디코딩 (%7E→~)", "https://example.com/%7Euser/%41%42"),
-    ("퍼센트 인코딩: reserved 대문자 hex 통일 (%2f→%2F)", "https://example.com/a%2fb%3fc"),
-    ("경로 dot-segment 해소 (/../)", "https://example.com/a/b/../c/./d"),
-    ("연속 슬래시 축소 (보안: DB 매칭 우회 방지)", "https://example.com//a///b"),
-    ("userinfo 제거 (피싱: google.com@evil.com)", "https://google.com@evil.com/login"),
-    ("params 퍼센트 인코딩 정돈", "https://example.com/path;%7eparam?q=1"),
-    ("IDN 유니코드 → 퓨니코드 통일 (외부 DB 호환)", "https://☃.com/path"),
-    ("IDN 퓨니코드 유지", "https://xn--n3h.com/path"),
-    ("제어 문자 제거", "https://exam\x00ple.com/pa\x01th"),
-    ("공백 trim", "  https://example.com/page  "),
-    ("종합", "  HTTP://EXAMPLE.COM:80/a/b/../c/./d?q=%7e&x=%2f#top  "),
+    ("Scheme/host lowercasing, path case preserved", "HTTP://EXAMPLE.COM/Path/To/Page"),
+    ("Default port removal (80, 443)", "https://example.com:443/secure"),
+    ("Non-default port kept", "https://example.com:8080/api"),
+    ("Fragment removal", "https://example.com/page#section-2"),
+    ("Missing scheme defaults to https", "example.com/hello"),
+    ("Unreserved pct-decode (%7E->~)", "https://example.com/%7Euser/%41%42"),
+    ("Reserved hex uppercased (%2f->%2F)", "https://example.com/a%2fb%3fc"),
+    ("Dot-segment resolution (/../)", "https://example.com/a/b/../c/./d"),
+    ("Consecutive slash collapse", "https://example.com//a///b"),
+    ("Userinfo stripped (phishing vector)", "https://google.com@evil.com/login"),
+    ("Params pct-encoding normalized", "https://example.com/path;%7eparam?q=1"),
+    ("IDN unicode -> punycode", "https://xn--n3h.com/path"),
+    ("IDN punycode passthrough", "https://xn--n3h.com/path"),
+    ("Control character removal", "https://exam\x00ple.com/pa\x01th"),
+    ("Whitespace trimming", "  https://example.com/page  "),
+    ("Combined", "  HTTP://EXAMPLE.COM:80/a/b/../c/./d?q=%7e&x=%2f#top  "),
 ]
 
 ERROR_CASES: list[tuple[str, str]] = [
-    ("빈 문자열", ""),
-    ("공백만", "   "),
-    ("지원하지 않는 스킴", "ftp2://example.com"),
-    ("호스트 없음", "https://"),
-    ("최대 길이 초과", "https://example.com/" + "a" * 1024),
+    ("Empty string", ""),
+    ("Whitespace only", "   "),
+    ("Unsupported scheme", "ftp2://example.com"),
+    ("No host", "https://"),
+    ("Exceeds max length", "https://example.com/" + "a" * 1024),
 ]
 
 
 def main() -> None:
     print()
-    print("╔══════════════════════════════════════════════════════════════════════╗")
-    print("║                 LinClean — URL Normalization Test                    ║")
-    print("╚══════════════════════════════════════════════════════════════════════╝")
+    print("=" * 72)
+    print("  LinClean -- URL Normalization Demo")
+    print("=" * 72)
 
-    # ── 정상 케이스 ──────────────────────────────────────────────────────────
-    print()
-    print("■ 정상 케이스")
+    print("\n[Success cases]")
     print(DIVIDER)
 
     for i, (desc, raw) in enumerate(CASES, 1):
         result = normalize_url(raw)
-        # 제어 문자가 포함된 입력은 repr로 표시
         display_input = repr(raw) if any(ord(c) < 32 for c in raw) else raw
         print(f"  [{i:02d}] {desc}")
-        print(f"       입력  → {display_input}")
-        print(f"       원본  → {result.original_url}")
-        print(f"       정규화 → {result.normalized_url}")
+        print(f"       input      : {display_input}")
+        print(f"       original   : {result.original_url}")
+        print(f"       normalized : {result.normalized_url}")
         print(DIVIDER)
 
-    # ── 에러 케이스 ──────────────────────────────────────────────────────────
-    print()
-    print("■ 에러 케이스 (NormalizationError)")
+    print("\n[Error cases (NormalizationError)]")
     print(DIVIDER)
 
     for i, (desc, raw) in enumerate(ERROR_CASES, 1):
@@ -71,12 +65,12 @@ def main() -> None:
         try:
             normalize_url(raw)
             print(f"  [{i:02d}] {desc}")
-            print(f"       입력 → {display_input}")
-            print(f"       결과 → ⚠ 예외가 발생하지 않음!")
+            print(f"       input  : {display_input}")
+            print(f"       result : WARN -- expected error not raised!")
         except NormalizationError as e:
             print(f"  [{i:02d}] {desc}")
-            print(f"       입력 → {display_input}")
-            print(f"       에러 → {e.message}")
+            print(f"       input  : {display_input}")
+            print(f"       error  : {e.message}")
         print(DIVIDER)
 
     print()

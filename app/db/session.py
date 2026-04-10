@@ -12,13 +12,8 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 
-# SQLite-specific engine. Notes:
-#   - check_same_thread=False is required because aiosqlite hands the
-#     connection across threads internally.
-#   - We don't tune pool size: SQLite is single-writer, and the default
-#     pool is fine for an async app of this scale.
-#   - We ensure the parent directory exists at import time so the very
-#     first connection doesn't fail in a fresh checkout.
+# aiosqlite requires check_same_thread=False (it passes connections across threads).
+# Ensure data dir exists so a fresh checkout doesn't fail on first connect.
 settings.sqlite_file.parent.mkdir(parents=True, exist_ok=True)
 
 engine: AsyncEngine = create_async_engine(
@@ -31,12 +26,7 @@ engine: AsyncEngine = create_async_engine(
 
 @event.listens_for(Engine, "connect")
 def _enable_sqlite_pragmas(dbapi_connection: Any, _: Any) -> None:
-    """Apply sane defaults for every SQLite connection.
-
-    - WAL gives concurrent readers while a writer is active.
-    - foreign_keys=ON is off by default in SQLite (!) and must be re-enabled.
-    - NORMAL synchronous trades a tiny crash-recovery window for big writes.
-    """
+    """WAL for concurrent reads, foreign_keys=ON (off by default in SQLite)."""
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -55,7 +45,7 @@ SessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency yielding an AsyncSession with rollback-on-error."""
+    """Yield an AsyncSession; rolls back on unhandled errors."""
     async with SessionLocal() as session:
         try:
             yield session
