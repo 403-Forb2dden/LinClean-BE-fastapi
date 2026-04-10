@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     rdap_cache_ttl_seconds: int = 60 * 60 * 24  # 24h
     rdap_new_domain_threshold_days: int = 30
 
+    # ---- Normalizer --------------------------------------------------------
+    normalizer_max_url_length: int = 2048
+
     # ---- Scoring -----------------------------------------------------------
     score_weight_gsb: int = 50
     score_weight_urlhaus: int = 50

@@ -53,3 +53,9 @@ class ValidationError(AppError):
     status_code = 422
     code = "validation_error"
     message = "Invalid input."
+
+
+class NormalizationError(AppError):
+    status_code = 422
+    code = "normalization_error"
+    message = "URL normalization failed."
