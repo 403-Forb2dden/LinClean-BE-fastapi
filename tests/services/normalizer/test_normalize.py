@@ -28,22 +28,22 @@ class TestInputValidation:
         assert "example.com" in result.normalized_url
 
     def test_max_length_exceeded_raises(self) -> None:
-        long_url = "https://example.com/" + "a" * 2048
+        long_url = "https://example.com/" + "a" * 1024
         with pytest.raises(NormalizationError, match="최대 길이"):
             normalize_url(long_url)
 
     def test_max_length_boundary_passes(self) -> None:
-        # 정확히 2048자 — 통과해야 함
-        padding = 2048 - len("https://example.com/")
+        # 정확히 1024자 — 통과해야 함
+        padding = 1024 - len("https://example.com/")
         url = "https://example.com/" + "a" * padding
         result = normalize_url(url)
         assert result.normalized_url.startswith("https://example.com/")
 
     def test_max_length_checked_after_scheme_prepend(self) -> None:
         # 스킴 없이 입력하면 "https://" 가 붙으므로, 보정 후 길이로 검사해야 함
-        padding = 2048 - len("https://") - len("example.com/")
+        padding = 1024 - len("https://") - len("example.com/")
         url_without_scheme = "example.com/" + "a" * padding
-        # 스킴 보정 후 정확히 2048자 → 통과
+        # 스킴 보정 후 정확히 1024자 → 통과
         result = normalize_url(url_without_scheme)
         assert result.normalized_url.startswith("https://example.com/")
 

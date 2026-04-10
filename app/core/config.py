@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     rdap_new_domain_threshold_days: int = 30
 
     # ---- Normalizer --------------------------------------------------------
-    normalizer_max_url_length: int = 2048
+    normalizer_max_url_length: int = 1024
 
     # ---- Scoring -----------------------------------------------------------
     score_weight_gsb: int = 50

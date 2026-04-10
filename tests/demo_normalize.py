@@ -36,7 +36,7 @@ ERROR_CASES: list[tuple[str, str]] = [
     ("공백만", "   "),
     ("지원하지 않는 스킴", "ftp2://example.com"),
     ("호스트 없음", "https://"),
-    ("최대 길이 초과", "https://example.com/" + "a" * 2048),
+    ("최대 길이 초과", "https://example.com/" + "a" * 1024),
 ]
 
 

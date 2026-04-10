@@ -1,7 +1,7 @@
 """URL 정규화(Canonicalization) 모듈.
 
 파이프라인 1단계 — 후속 단계(위협 DB 대조·휴리스틱·콘텐츠 분석)가
-동일한 기준으로 URL을 비교할 수 있도록 canonical form으로 변환합니다.
+동일한 기준으로 URL을 비교할 수 있도록 canonical form 으로 변환
 
 수행 항목:
   - 입력 검증 (빈 문자열, 공백 trim, 제어 문자 제거, 최대 길이 제한)
@@ -42,7 +42,7 @@ _PCT_ENCODED_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
 
 def normalize_url(raw_url: str) -> NormalizeResult:
-    """원본 URL을 canonical form으로 정규화합니다.
+    """원본 URL을 canonical form으로 정규화 합니다.
 
     Returns:
         NormalizeResult: original_url(trim 후 원본)과 normalized_url.
@@ -88,9 +88,7 @@ def normalize_url(raw_url: str) -> NormalizeResult:
 
     # ---- userinfo 제거 (보안) -----------------------------------------------
     # RFC 3986 §3.2.1의 userinfo (user:pass@)를 의도적으로 삭제합니다.
-    # 사유: "https://google.com@evil.com/" 처럼 합법 도메인으로 위장하는
-    # 피싱 트릭에 사용되며, 브라우저도 userinfo를 무시하거나 경고합니다.
-    # parsed.hostname이 실제 호스트(evil.com)를 정확히 반환하므로 안전합니다.
+    # parsed.hostname이 실제 호스트(evil.com)를 정확히 반환합니다.
 
     # ---- 기본 포트 제거 ------------------------------------------------------
     port = parsed.port
