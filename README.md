@@ -61,10 +61,13 @@ linclean-fastapi/
 │   │   └── __init__.py               # Alembic autogen 용 import 모음
 │   │
 │   ├── schemas/                      # Pydantic DTO
-│   │   └── common.py                 # HealthResponse, ErrorResponse 등
+│   │   ├── common.py                 # HealthResponse, ErrorResponse 등
+│   │   └── analysis.py               # NormalizeResult 등 파이프라인 단계별 DTO
 │   │
-│   └── services/                     # 도메인/비즈니스 로직
-│       (4단계 파이프라인 / 외부 연동 / Spring 콜백이 들어갈 자리)
+│   └── services/                     # 도메인/비즈니스 로직 (파이프라인 단계별 모듈)
+│       └── normalizer/               # 1단계: URL 정규화(Canonicalization)
+│           ├── __init__.py            # 진입점 (normalize_url re-export)
+│           └── normalize.py           # 입력 검증, 스킴·호스트 정규화, 포트·프래그먼트 제거, 퍼센트 인코딩 정돈, 경로 정규화, IDN 디코딩
 │
 ├── alembic/                          # 외부 피드 캐시 스키마 마이그레이션
 │   ├── env.py                        # SQLite + batch mode 설정
@@ -72,8 +75,11 @@ linclean-fastapi/
 │   └── versions/
 │
 ├── tests/                            # pytest 테스트
-│   ├── conftest.py                   # ASGI AsyncClient + 인메모리 SQLite
-│   └── test_health.py
+│   ├── conftest.py                   # 공용 픽스처
+│   ├── demo_normalize.py            # URL 정규화 데모 스크립트
+│   └── services/
+│       └── normalizer/
+│           └── test_normalize.py     # URL 정규화 단위 테스트 (38개)
 │
 ├── docs/                             # 기획서 등 설계 문서
 │   └── LinClean_기능_초안.pdf
@@ -102,9 +108,13 @@ linclean-fastapi/
   `app/models/__init__.py` 에서 import 해야 Alembic autogenerate 가 인식합니다.
 - **`schemas/`** — 요청·응답 Pydantic 모델. Spring 으로 보내는 분석 결과 DTO
   (`AnalysisResultCallback`) 도 여기서 정의합니다.
-- **`services/`** — 4단계 파이프라인, 외부 API 클라이언트, 점수 산출, Spring
-  콜백 호출, AI 정적 분석 호출 등 모든 비즈니스 로직. `Request` 같은 FastAPI
+- **`services/`** — 4단계 파이프라인을 **단계별 하위 패키지**로 분리합니다.
+  각 패키지의 `__init__.py` 가 해당 단계의 public 진입점을 re-export 하며,
+  오케스트레이터(`pipeline.py`)가 이를 순차 호출합니다. `Request` 같은 FastAPI
   객체를 받지 않고 `AsyncSession` / 순수 인자만 받습니다.
+  - **`normalizer/`** — 1단계. `normalize_url()` 로 URL 을 canonical form 으로
+    정규화합니다 (스킴·호스트 소문자화, 기본 포트 제거, 퍼센트 인코딩 정돈,
+    경로 dot-segment 해소, IDN 디코딩, 프래그먼트 제거, 입력 검증).
 - **`middleware/`** — `RequestContextMiddleware` 가 매 요청마다 `X-Request-ID`
   를 생성/전파하고 structlog contextvars 에 바인딩합니다. 응답 헤더로도 echo
   되며 모든 로그 라인에 자동으로 따라붙습니다.
