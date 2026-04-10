@@ -83,7 +83,7 @@ def _normalize_idn(hostname: str) -> str:
     """Convert unicode hostname to punycode for threat DB compatibility."""
     try:
         return hostname.encode("idna").decode("ascii")
-    except (UnicodeError, UnicodeDecodeError):
+    except UnicodeError:
         return hostname
 
 
