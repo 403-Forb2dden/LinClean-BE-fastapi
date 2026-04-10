@@ -113,6 +113,14 @@ class TestPort:
         result = normalize_url("https://example.com:8080/")
         assert ":8080" in result.normalized_url
 
+    def test_out_of_range_port_raises(self) -> None:
+        with pytest.raises(NormalizationError, match="유효하지 않은 포트"):
+            normalize_url("https://example.com:99999/")
+
+    def test_non_numeric_port_raises(self) -> None:
+        with pytest.raises(NormalizationError, match="유효하지 않은 포트"):
+            normalize_url("example.com:notaport/foo")
+
 
 class TestPath:
     def test_empty_path_becomes_slash(self) -> None:

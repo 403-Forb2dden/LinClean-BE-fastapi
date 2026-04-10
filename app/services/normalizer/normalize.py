@@ -61,7 +61,10 @@ def normalize_url(raw_url: str) -> NormalizeResult:
 
     # Reassembling netloc from parsed.hostname implicitly drops userinfo
     # (RFC 3986 §3.2.1), which is abused for phishing (google.com@evil.com).
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as e:
+        raise NormalizationError(message=f"유효하지 않은 포트: {e}") from e
     if port and port == _DEFAULT_PORTS.get(scheme):
         port = None
     netloc = hostname if port is None else f"{hostname}:{port}"
