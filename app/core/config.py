@@ -79,8 +79,9 @@ class Settings(BaseSettings):
 
     # 언체이닝
     unchain_max_hops: int = 20
-    unchain_timeout_seconds: float = 10.0
-    unchain_per_hop_timeout_seconds: float = 5.0
+    unchain_timeout_seconds: float = 5.0
+    unchain_connect_timeout_seconds: float = 3.0
+    unchain_chain_timeout_seconds: float = 20.0
     unchain_user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
