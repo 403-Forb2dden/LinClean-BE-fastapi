@@ -16,7 +16,7 @@ DIVIDER = "-" * 72
 CASES: list[tuple[str, str]] = [
     ("리다이렉트 없음", "https://www.google.com/"),
     ("HTTP → HTTPS 업그레이드", "http://google.com/"),
-    ("단축 URL (bit.ly 예시)", "https://bit.ly/3kF8Yv2"),
+    ("단축 URL (bit.ly 사용)", "https://bit.ly/4tGFJkf"),
     ("t.co 단축 URL", "https://t.co/example"),
     ("HTTP 301 리다이렉트", "http://github.com/"),
     ("상대 경로 리다이렉트", "https://httpbin.org/relative-redirect/2"),
