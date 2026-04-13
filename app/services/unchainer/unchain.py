@@ -6,8 +6,7 @@
 
 from __future__ import annotations
 
-import ssl
-from socket import gaierror
+import asyncio
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -18,9 +17,31 @@ from app.schemas.analysis import HopRecord, UnchainResult
 # 리다이렉트로 간주할 상태 코드
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
 
+# 리다이렉트 대상으로 허용하는 스킴 (javascript:, data: 등 차단)
+_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+
 
 async def unchain_url(url: str) -> UnchainResult:
     """리다이렉트 체인을 추적하고 최종 URL·hop 기록·의심 신호를 반환."""
+    try:
+        return await asyncio.wait_for(
+            _unchain_url_inner(url),
+            timeout=settings.unchain_chain_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        return UnchainResult(
+            input_url=url,
+            final_url=url,
+            hops=[],
+            hop_count=0,
+            timed_out=True,
+            error="chain_timeout",
+            signals=[],
+        )
+
+
+async def _unchain_url_inner(url: str) -> UnchainResult:
+    """실제 체인 추적 로직. unchain_url에서 총 timeout으로 감싸서 호출."""
     hops: list[HopRecord] = []
     signals: list[str] = []
     visited: set[str] = set()
@@ -37,11 +58,10 @@ async def unchain_url(url: str) -> UnchainResult:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(
             settings.unchain_timeout_seconds,
-            connect=settings.unchain_per_hop_timeout_seconds,
+            connect=settings.unchain_connect_timeout_seconds,
         ),
         follow_redirects=False,
         verify=True,
-        # 쿠키·인증 비전송
         cookies=None,
     ) as client:
         for _ in range(settings.unchain_max_hops):
@@ -92,24 +112,25 @@ async def _follow_one_hop(
 ) -> tuple[HopRecord | None, str | None, str | None]:
     """단일 hop 요청. (hop_record, next_url_or_None, error_or_None) 반환.
 
-    HEAD 우선 → 실패 시 GET 폴백.
+    HEAD 우선 → 실패 시(상태 코드·네트워크 에러 모두) GET 폴백.
     """
     for method in ("HEAD", "GET"):
         try:
             resp = await client.request(method, url, headers=headers)
         except httpx.TimeoutException:
+            if method == "HEAD":
+                continue
             return None, None, "timeout"
-        except gaierror:
-            return None, None, "dns_failure"
-        except ssl.SSLError as e:
-            return None, None, f"tls_error: {e}"
         except httpx.ConnectError as e:
-            # DNS 실패가 ConnectError 안에 래핑되는 경우도 처리
+            if method == "HEAD":
+                continue
             cause = str(e).lower()
             if "name or service not known" in cause or "getaddrinfo" in cause:
                 return None, None, "dns_failure"
             return None, None, f"connection_refused: {e}"
         except httpx.HTTPError as e:
+            if method == "HEAD":
+                continue
             return None, None, f"http_error: {e}"
 
         # HEAD에서 405 등 클라이언트 에러면 GET 폴백
@@ -125,32 +146,45 @@ async def _follow_one_hop(
 
         # 리다이렉트 처리
         if resp.status_code in _REDIRECT_CODES:
-            location = resp.headers.get("location")
-            if not location:
+            raw_location = resp.headers.get("location")
+            if not raw_location:
                 hop = HopRecord(
                     url=url, status_code=resp.status_code, method=method,
                 )
                 return hop, None, "missing_location_header"
 
-            # 상대 경로 Location 해석
-            next_url = urljoin(url, location)
+            next_url = urljoin(url, raw_location)
+            parsed_next = urlparse(next_url)
+
+            # 허용되지 않는 스킴 방어 (javascript:, data: 등)
+            if parsed_next.scheme not in _ALLOWED_SCHEMES:
+                hop = HopRecord(
+                    url=url,
+                    status_code=resp.status_code,
+                    raw_location=raw_location,
+                    location=next_url,
+                    method=method,
+                )
+                signals.append(f"unsafe_scheme:{parsed_next.scheme}")
+                return hop, None, f"unsafe_redirect_scheme:{parsed_next.scheme}"
+
+            parsed_url = urlparse(url)
 
             hop = HopRecord(
                 url=url,
                 status_code=resp.status_code,
+                raw_location=raw_location,
                 location=next_url,
                 method=method,
             )
 
             # 스킴 다운그레이드 감지 (https → http)
-            if urlparse(url).scheme == "https" and urlparse(next_url).scheme == "http":
+            if parsed_url.scheme == "https" and parsed_next.scheme == "http":
                 signals.append("scheme_downgrade")
 
             # 크로스 오리진 호스트 변화
-            prev_host = urlparse(url).hostname
-            next_host = urlparse(next_url).hostname
-            if prev_host != next_host:
-                signals.append(f"cross_origin:{prev_host}->{next_host}")
+            if parsed_url.hostname != parsed_next.hostname:
+                signals.append(f"cross_origin:{parsed_url.hostname}->{parsed_next.hostname}")
 
             return hop, next_url, None
 
