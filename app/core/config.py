@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     normalizer_max_url_length: int = 1024
 
     # 언체이닝
-    unchain_max_hops: int = 20
+    unchain_max_hops: int = 5
     unchain_timeout_seconds: float = 5.0
     unchain_connect_timeout_seconds: float = 3.0
     unchain_chain_timeout_seconds: float = 20.0
