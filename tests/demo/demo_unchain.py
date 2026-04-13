@@ -1,7 +1,7 @@
 """URL 언체이닝 데모.
 
 사용법:
-    python -m tests.demo_unchain
+    python -m tests.demo.demo_unchain
 """
 
 from __future__ import annotations

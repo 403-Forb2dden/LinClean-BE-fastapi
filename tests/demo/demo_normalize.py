@@ -1,7 +1,7 @@
 """URL 정규화 데모.
 
 사용법:
-    python -m tests.demo_normalize
+    python -m tests.demo.demo_normalize
 """
 
 from __future__ import annotations
