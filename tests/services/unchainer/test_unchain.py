@@ -19,11 +19,13 @@ def _make_response(
     headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """테스트용 httpx.Response 생성."""
-    return httpx.Response(
+    resp = httpx.Response(
         status_code=status_code,
         headers=headers or {},
         request=httpx.Request("HEAD", "https://example.com"),
     )
+    resp.aclose = AsyncMock()  # 스트리밍 close 호출 안전하게 처리
+    return resp
 
 
 def _mock_client(
@@ -31,20 +33,48 @@ def _mock_client(
     *,
     side_effect=None,
 ) -> AsyncMock:
-    """httpx.AsyncClient mock 생성. 반복되는 보일러플레이트 제거용."""
+    """httpx.AsyncClient mock 생성. 반복되는 보일러플레이트 제거용.
+
+    build_request + send(stream=True) 방식에 맞춰 mock 구성.
+    side_effect 함수는 기존과 동일하게 (method, *args, **kwargs) 시그니처.
+    """
     mock = AsyncMock()
+
+    # build_request는 동기 메서드 — 실제 httpx.Request 반환
+    mock.build_request = lambda method, url, **kw: httpx.Request(method, url, **kw)
+
     if side_effect is not None:
-        mock.request = AsyncMock(side_effect=side_effect)
+        if isinstance(side_effect, BaseException):
+            mock.send = AsyncMock(side_effect=side_effect)
+        else:
+            _original = side_effect
+
+            async def _send_wrapper(req, **kwargs):
+                if asyncio.iscoroutinefunction(_original):
+                    return await _original(req.method, str(req.url))
+                return _original(req.method, str(req.url))
+
+            mock.send = AsyncMock(side_effect=_send_wrapper)
     elif responses is not None:
-        mock.request = AsyncMock(side_effect=responses)
+        mock.send = AsyncMock(side_effect=responses)
     else:
-        mock.request = AsyncMock(return_value=_make_response(200))
+        mock.send = AsyncMock(return_value=_make_response(200))
+
     mock.__aenter__ = AsyncMock(return_value=mock)
     mock.__aexit__ = AsyncMock(return_value=False)
     return mock
 
 
 _PATCH_TARGET = "app.services.unchainer.unchain.httpx.AsyncClient"
+
+
+@pytest.fixture(autouse=True)
+def _bypass_host_safety(monkeypatch):
+    """기본적으로 SSRF 검사를 우회 — SSRF 전용 테스트에서만 직접 패치."""
+    monkeypatch.setattr(
+        "app.services.unchainer.unchain._check_host_safety",
+        AsyncMock(return_value=None),
+    )
 
 
 class TestBasicChain:
@@ -435,3 +465,133 @@ class TestHopRecording:
 
             assert result.hops[0].status_code == code, f"Failed for status {code}"
             assert result.final_url == "https://example.com/dest"
+
+
+class TestSsrfProtection:
+    """SSRF·DNS Rebinding 방어."""
+
+    @pytest.mark.asyncio
+    async def test_loopback_blocked(self) -> None:
+        """127.0.0.1 등 루프백 주소 차단."""
+        with patch(
+            "app.services.unchainer.unchain._check_host_safety",
+            new_callable=AsyncMock,
+            return_value="ssrf_blocked",
+        ):
+            result = await unchain_url("http://127.0.0.1/admin")
+
+        assert result.error == "ssrf_blocked"
+        assert "ssrf_blocked" in result.signals
+        assert result.hop_count == 0
+
+    @pytest.mark.asyncio
+    async def test_private_ip_blocked(self) -> None:
+        """사설 IP 대역(10.x, 172.16.x, 192.168.x) 차단."""
+        for url in (
+            "http://10.0.0.1/",
+            "http://172.16.0.1/",
+            "http://192.168.1.1/",
+        ):
+            with patch(
+                "app.services.unchainer.unchain._check_host_safety",
+                new_callable=AsyncMock,
+                return_value="ssrf_blocked",
+            ):
+                result = await unchain_url(url)
+
+            assert result.error == "ssrf_blocked", f"Failed for {url}"
+            assert "ssrf_blocked" in result.signals
+
+    @pytest.mark.asyncio
+    async def test_metadata_endpoint_blocked(self) -> None:
+        """클라우드 메타데이터 엔드포인트(169.254.169.254) 차단."""
+        with patch(
+            "app.services.unchainer.unchain._check_host_safety",
+            new_callable=AsyncMock,
+            return_value="ssrf_blocked",
+        ):
+            result = await unchain_url("http://169.254.169.254/latest/meta-data/")
+
+        assert result.error == "ssrf_blocked"
+        assert "ssrf_blocked" in result.signals
+
+    @pytest.mark.asyncio
+    async def test_redirect_to_internal_blocked(self) -> None:
+        """외부 URL이 내부 IP로 리다이렉트할 때 두 번째 hop에서 차단."""
+        safety_call_count = 0
+
+        async def _safety_per_hop(url: str) -> str | None:
+            nonlocal safety_call_count
+            safety_call_count += 1
+            # 첫 번째 hop은 통과, 두 번째(내부 IP)는 차단
+            if "internal" in url or "127.0.0.1" in url:
+                return "ssrf_blocked"
+            return None
+
+        responses = [
+            _make_response(302, {"location": "http://127.0.0.1/secret"}),
+        ]
+        client = _mock_client(responses)
+
+        with (
+            patch(_PATCH_TARGET, return_value=client),
+            patch(
+                "app.services.unchainer.unchain._check_host_safety",
+                side_effect=_safety_per_hop,
+            ),
+        ):
+            result = await unchain_url("https://evil.com/redirect")
+
+        assert result.error == "ssrf_blocked"
+        assert "ssrf_blocked" in result.signals
+
+    @pytest.mark.asyncio
+    async def test_public_url_passes(self) -> None:
+        """공개 IP는 정상 통과."""
+        client = _mock_client([_make_response(200)])
+
+        with (
+            patch(_PATCH_TARGET, return_value=client),
+            patch(
+                "app.services.unchainer.unchain._check_host_safety",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            result = await unchain_url("https://example.com/")
+
+        assert result.error is None
+        assert "ssrf_blocked" not in result.signals
+
+
+class TestIsPrivateIp:
+    """_is_private_ip 단위 테스트."""
+
+    def test_loopback(self) -> None:
+        from app.services.unchainer.unchain import _is_private_ip
+
+        assert _is_private_ip("127.0.0.1") is True
+        assert _is_private_ip("::1") is True
+
+    def test_private_ranges(self) -> None:
+        from app.services.unchainer.unchain import _is_private_ip
+
+        assert _is_private_ip("10.0.0.1") is True
+        assert _is_private_ip("172.16.0.1") is True
+        assert _is_private_ip("192.168.1.1") is True
+
+    def test_link_local(self) -> None:
+        from app.services.unchainer.unchain import _is_private_ip
+
+        assert _is_private_ip("169.254.169.254") is True
+
+    def test_public_ip(self) -> None:
+        from app.services.unchainer.unchain import _is_private_ip
+
+        assert _is_private_ip("8.8.8.8") is False
+        assert _is_private_ip("1.1.1.1") is False
+
+    def test_invalid_ip(self) -> None:
+        from app.services.unchainer.unchain import _is_private_ip
+
+        assert _is_private_ip("not-an-ip") is True
