@@ -65,9 +65,12 @@ linclean-fastapi/
 │   │   └── analysis.py               # NormalizeResult 등 파이프라인 단계별 DTO
 │   │
 │   └── services/                     # 도메인/비즈니스 로직 (파이프라인 단계별 모듈)
-│       └── normalizer/               # 1단계: URL 정규화(Canonicalization)
-│           ├── __init__.py            # 진입점 (normalize_url re-export)
-│           └── normalize.py           # 입력 검증, 스킴·호스트 정규화, 포트·프래그먼트 제거, 퍼센트 인코딩 정돈, 경로 정규화, IDN 디코딩
+│       ├── normalizer/               # 1단계: URL 정규화(Canonicalization)
+│       │   ├── __init__.py            # 진입점 (normalize_url re-export)
+│       │   └── normalize.py           # 입력 검증, 스킴·호스트 정규화, 포트·프래그먼트 제거, 퍼센트 인코딩 정돈, 경로 정규화, IDN 디코딩
+│       └── unchainer/                # 1-2단계: URL 언체이닝(리다이렉트 추적)
+│           ├── __init__.py            # 진입점 (unchain_url re-export)
+│           └── unchain.py             # HEAD+GET 폴백, 체인 총 timeout, 스킴 방어, 의심 신호 수집
 │
 ├── alembic/                          # 외부 피드 캐시 스키마 마이그레이션
 │   ├── env.py                        # SQLite + batch mode 설정
@@ -76,10 +79,14 @@ linclean-fastapi/
 │
 ├── tests/                            # pytest 테스트
 │   ├── conftest.py                   # 공용 픽스처
-│   ├── demo_normalize.py            # URL 정규화 데모 스크립트
+│   ├── demo/                         # 데모 스크립트
+│   │   ├── demo_normalize.py         # URL 정규화 데모
+│   │   └── demo_unchain.py           # URL 언체이닝 데모
 │   └── services/
-│       └── normalizer/
-│           └── test_normalize.py     # URL 정규화 단위 테스트 (38개)
+│       ├── normalizer/
+│       │   └── test_normalize.py     # URL 정규화 단위 테스트 (38개)
+│       └── unchainer/
+│           └── test_unchain.py       # URL 언체이닝 단위 테스트 (23개)
 │
 ├── docs/                             # 기획서 등 설계 문서
 │   └── LinClean_기능_초안.pdf
@@ -115,6 +122,12 @@ linclean-fastapi/
   - **`normalizer/`** — 1단계. `normalize_url()` 로 URL 을 canonical form 으로
     정규화합니다 (스킴·호스트 소문자화, 기본 포트 제거, 퍼센트 인코딩 정돈,
     경로 dot-segment 해소, IDN 디코딩, 프래그먼트 제거, 입력 검증).
+  - **`unchainer/`** — 1-2단계. `unchain_url()` 로 리다이렉트 체인(3xx Location)
+    을 끝까지 추적해 최종 URL 을 확정합니다. HEAD 우선 → GET 폴백 전략으로
+    대역폭을 절약하면서 호환성을 확보하고, 네트워크 에러 시에도 GET 으로
+    재시도합니다. 체인 전체에 총 timeout 을 적용해 악의적 서버 방어가 가능하며,
+    `javascript:` / `data:` 같은 비허용 스킴 리다이렉트를 차단합니다.
+    스킴 다운그레이드·크로스 오리진 등의 의심 신호도 수집합니다.
 - **`middleware/`** — `RequestContextMiddleware` 가 매 요청마다 `X-Request-ID`
   를 생성/전파하고 structlog contextvars 에 바인딩합니다. 응답 헤더로도 echo
   되며 모든 로그 라인에 자동으로 따라붙습니다.
@@ -158,9 +171,13 @@ Spring `/internal/analysis-result` 콜백 POST
 - **정규화**: 스킴·호스트 소문자화, 기본 포트(`:80` / `:443`) 제거,
   프래그먼트(`#...`) 제거, 퍼센트 인코딩 정돈, 추적 파라미터(`utm_*` 등)
   정책적 제거, IDN(퓨니코드) → 유니코드 정규화
-- **언체이닝**: `HEAD` 요청만으로 리다이렉트 체인(3xx Location) 을 끝까지
-  따라가 **최종 분석 대상 URL** 을 확정합니다. 무한 루프 방지를 위해 방문한
-  URL 을 추적하며, hop 수가 5 이상이면 자체적으로 의심 신호로 가산합니다.
+- **언체이닝**: `HEAD` 우선 → `GET` 폴백 전략으로 리다이렉트 체인(3xx Location)
+  을 끝까지 따라가 **최종 분석 대상 URL** 을 확정합니다.
+  - 네트워크 에러(타임아웃·연결 실패 등) 발생 시에도 GET 으로 재시도
+  - 체인 전체에 총 timeout(기본 30초) 적용 — 악의적 서버의 지연 공격 방어
+  - `javascript:`, `data:` 등 비허용 스킴 리다이렉트 차단
+  - 스킴 다운그레이드(HTTPS→HTTP), 크로스 오리진, 무한 루프, max hop 초과 감지
+  - 각 hop 의 원본 Location 값(`raw_location`)과 절대경로 해석 결과를 모두 기록
 - 이후 2~4 단계는 모두 이 **최종 URL** 을 기준으로 동작합니다.
 
 ### 2단계 — 외부 위협 DB 대조
