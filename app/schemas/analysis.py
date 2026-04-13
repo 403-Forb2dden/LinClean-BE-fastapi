@@ -13,7 +13,8 @@ class HopRecord(BaseModel):
 
     url: str = Field(description="이 hop에서 요청한 URL")
     status_code: int = Field(description="HTTP 응답 상태 코드")
-    location: str | None = Field(default=None, description="Location 헤더 값(있을 경우)")
+    raw_location: str | None = Field(default=None, description="Location 헤더 원본 값(상대경로 포함)")
+    location: str | None = Field(default=None, description="절대경로로 해석된 Location 값")
     method: str = Field(default="HEAD", description="요청에 사용한 HTTP 메서드")
 
 
