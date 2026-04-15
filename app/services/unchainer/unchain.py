@@ -67,7 +67,7 @@ async def unchain_url(url: str) -> UnchainResult:
             _unchain_url_inner(url),
             timeout=settings.unchain_chain_timeout_seconds,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return UnchainResult(
             input_url=url,
             final_url=url,

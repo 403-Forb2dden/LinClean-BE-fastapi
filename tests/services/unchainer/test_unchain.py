@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
 from app.services.unchainer.unchain import unchain_url
 
 
