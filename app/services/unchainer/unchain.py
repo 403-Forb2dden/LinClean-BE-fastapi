@@ -198,6 +198,9 @@ async def _follow_one_hop(
         if resp.status_code in _REDIRECT_CODES:
             raw_location = resp.headers.get("location")
             if not raw_location:
+                # 일부 서버는 HEAD 응답에서 Location을 생략하므로 GET으로 재시도
+                if method == "HEAD":
+                    continue
                 hop = HopRecord(
                     url=url, status_code=resp.status_code, method=method,
                 )
