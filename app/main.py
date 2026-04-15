@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,6 +9,7 @@ from app.api.error_handlers import register_error_handlers
 from app.api.v1.router import api_router as api_v1_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.db.session import engine
 from app.middleware.request_context import RequestContextMiddleware
 
@@ -22,10 +24,21 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         environment=settings.environment,
         version=settings.app_version,
     )
+    start_scheduler()
+    startup_task: asyncio.Task | None = None
+    if settings.scheduler_enabled and settings.urlhaus_sync_on_startup:
+        # 최초 부트 시 즉시 1회 동기화 (백그라운드, 앱 기동은 블로킹하지 않음).
+        from app.services.threat_db.urlhaus_sync import sync_urlhaus
+
+        startup_task = asyncio.create_task(sync_urlhaus())
+
     try:
         yield
     finally:
         logger.info("app.shutdown")
+        if startup_task is not None and not startup_task.done():
+            startup_task.cancel()
+        shutdown_scheduler(wait=False)
         await engine.dispose()
 
 
