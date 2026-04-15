@@ -37,9 +37,13 @@ async def check_threat_db(session: AsyncSession, final_url: str) -> ThreatDbResu
     gsb_task = check_gsb(final_url)
     urlhaus_task = check_urlhaus(session, final_url)
 
-    gsb_raw, urlhaus_raw = await asyncio.gather(
-        gsb_task, urlhaus_task, return_exceptions=True
-    )
+    gsb_raw, urlhaus_raw = await asyncio.gather(gsb_task, urlhaus_task, return_exceptions=True)
+
+    # CancelledError 는 상위 task 의 취소 신호이므로 절대 삼키지 않는다.
+    # (shutdown / 요청 timeout 시 degraded 결과를 영속화하는 사고 방지)
+    for raw in (gsb_raw, urlhaus_raw):
+        if isinstance(raw, asyncio.CancelledError):
+            raise raw
 
     if isinstance(gsb_raw, BaseException):
         logger.warning("threat_db.gsb_unexpected", error=str(gsb_raw))
@@ -54,7 +58,7 @@ async def check_threat_db(session: AsyncSession, final_url: str) -> ThreatDbResu
         urlhaus = urlhaus_raw
 
     is_malicious = gsb.is_threat or urlhaus.is_threat
-    sources_checked = int(gsb.checked) + int(urlhaus.checked)
+    sources_checked = sum((gsb.checked, urlhaus.checked))
 
     return ThreatDbResult(
         final_url=final_url,
