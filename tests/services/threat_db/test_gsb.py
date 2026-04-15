@@ -14,8 +14,8 @@ from app.services.threat_db.gsb import check_gsb
 @pytest.fixture(autouse=True)
 def _with_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "gsb_api_key", "test-key")
-    # "1회 경고" 전역 플래그 초기화 — 키 미설정 테스트 영향 제거.
-    monkeypatch.setattr(gsb_module, "_LOGGED_MISSING_KEY", False)
+    # "키 값별 1회 경고" throttle 초기화 — 테스트 간 상태 누수 방지.
+    gsb_module.reset_missing_key_warning()
 
 
 def _mock_post_response(resp: httpx.Response) -> AsyncMock:
@@ -108,6 +108,31 @@ async def test_invalid_json() -> None:
         result = await check_gsb("https://x.test/")
     assert result.checked is False
     assert result.error == "invalid_response"
+
+
+async def test_unmapped_non_200_returns_http_error() -> None:
+    # 3xx/기타 비매핑 상태코드는 스펙대로 "http_error" 로 평탄화된다.
+    resp = httpx.Response(301, request=httpx.Request("POST", "x"))
+    with patch(
+        "app.services.threat_db.gsb.httpx.AsyncClient",
+        return_value=_mock_post_response(resp),
+    ):
+        result = await check_gsb("https://x.test/")
+    assert result.checked is False
+    assert result.error == "http_error"
+
+
+async def test_missing_key_warning_throttled_per_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 같은 키 상태로 두 번 호출해도 경고는 1회. 키 값이 바뀌면 다시 1회.
+    warnings: list[str] = []
+    monkeypatch.setattr(settings, "gsb_api_key", None)
+    gsb_module.reset_missing_key_warning()
+    monkeypatch.setattr(gsb_module.logger, "warning", lambda event, **kw: warnings.append(event))
+    await check_gsb("https://x.test/")
+    await check_gsb("https://y.test/")
+    assert warnings.count("gsb.api_key_not_configured") == 1
 
 
 async def test_generic_http_error() -> None:

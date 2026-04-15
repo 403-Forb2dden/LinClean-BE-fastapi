@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from app.schemas.analysis import GSBMatch, GSBResult, URLhausResult
 from app.services.threat_db.check import check_threat_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,11 +17,12 @@ async def _run(
     urlhaus: URLhausResult,
     url: str = "https://x.test/",
 ):
-    with patch(
-        "app.services.threat_db.check.check_gsb", AsyncMock(return_value=gsb)
-    ), patch(
-        "app.services.threat_db.check.check_urlhaus",
-        AsyncMock(return_value=urlhaus),
+    with (
+        patch("app.services.threat_db.check.check_gsb", AsyncMock(return_value=gsb)),
+        patch(
+            "app.services.threat_db.check.check_urlhaus",
+            AsyncMock(return_value=urlhaus),
+        ),
     ):
         return await check_threat_db(session, url)
 
@@ -81,14 +84,33 @@ async def test_both_fail_returns_clean_zero_sources(
 
 
 async def test_exception_is_caught(async_session: AsyncSession) -> None:
-    with patch(
-        "app.services.threat_db.check.check_gsb",
-        AsyncMock(side_effect=RuntimeError("boom")),
-    ), patch(
-        "app.services.threat_db.check.check_urlhaus",
-        AsyncMock(return_value=URLhausResult(checked=True, is_threat=False)),
+    with (
+        patch(
+            "app.services.threat_db.check.check_gsb",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ),
+        patch(
+            "app.services.threat_db.check.check_urlhaus",
+            AsyncMock(return_value=URLhausResult(checked=True, is_threat=False)),
+        ),
     ):
         result = await check_threat_db(async_session, "https://x.test/")
     assert result.gsb.checked is False
     assert result.gsb.error == "unexpected"
     assert result.sources_checked == 1
+
+
+async def test_cancelled_error_propagates(async_session: AsyncSession) -> None:
+    # 상위 shutdown/timeout 신호(CancelledError)는 절대 삼키지 않는다.
+    with (
+        patch(
+            "app.services.threat_db.check.check_gsb",
+            AsyncMock(side_effect=asyncio.CancelledError()),
+        ),
+        patch(
+            "app.services.threat_db.check.check_urlhaus",
+            AsyncMock(return_value=URLhausResult(checked=True, is_threat=False)),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await check_threat_db(async_session, "https://x.test/")

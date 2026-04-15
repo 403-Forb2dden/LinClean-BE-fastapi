@@ -36,7 +36,9 @@ async def sync_engine_patch(monkeypatch: pytest.MonkeyPatch):
 
 def _mock_csv_response(text: str, status: int = 200) -> AsyncMock:
     resp = httpx.Response(
-        status, text=text, request=httpx.Request("GET", "https://x/"),
+        status,
+        text=text,
+        request=httpx.Request("GET", "https://x/"),
     )
     client = AsyncMock()
     client.__aenter__.return_value = client
@@ -52,8 +54,10 @@ async def test_sync_inserts_rows(sync_engine_patch) -> None:
     ):
         stats = await sync_module.sync_urlhaus()
 
+    # 최초 실행 — 모두 insert, update 는 0 이어야 한다(C1 회귀 방지).
     assert stats["total"] == 2
-    assert stats["inserted"] + stats["updated"] == 2
+    assert stats["inserted"] == 2
+    assert stats["updated"] == 0
     assert stats["failed"] == 0
 
     async with sync_engine_patch() as session:
@@ -73,11 +77,32 @@ async def test_sync_idempotent(sync_engine_patch) -> None:
         await sync_module.sync_urlhaus()
         stats2 = await sync_module.sync_urlhaus()
 
-    # 재실행 시 row 수 유지 — upsert 가 insert 중복 없이 동작.
+    # 두 번째 실행은 모두 update 여야 한다 — insert/update 분류가 맞는지 검증.
     async with sync_engine_patch() as session:
         rows = (await session.execute(select(URLhausEntry))).scalars().all()
     assert len(rows) == 2
     assert stats2["total"] == 2
+    assert stats2["inserted"] == 0
+    assert stats2["updated"] == 2
+    assert stats2["failed"] == 0
+
+
+async def test_sync_short_row_counts_failed(sync_engine_patch) -> None:
+    # 필드 수가 모자라는 행은 스킵하되 failed 로 카운트되어야 한다(I6).
+    bad_csv = (
+        "# header comment\n"
+        "1,2026-04-14 00:00:00,https://evil.test/a.exe\n"  # 필드 부족
+        '2,2026-04-14 00:05:00,https://good.test/b,online,,malware_download,"",'
+        "https://urlhaus.abuse.ch/url/2/,tester\n"
+    )
+    with patch(
+        "app.services.threat_db.urlhaus_sync.httpx.AsyncClient",
+        return_value=_mock_csv_response(bad_csv),
+    ):
+        stats = await sync_module.sync_urlhaus()
+    assert stats["total"] == 2
+    assert stats["failed"] == 1
+    assert stats["inserted"] == 1
 
 
 async def test_sync_network_failure_returns_empty_stats(
@@ -87,9 +112,7 @@ async def test_sync_network_failure_returns_empty_stats(
     client.__aenter__.return_value = client
     client.__aexit__.return_value = None
     client.get = AsyncMock(side_effect=httpx.HTTPError("net"))
-    with patch(
-        "app.services.threat_db.urlhaus_sync.httpx.AsyncClient", return_value=client
-    ):
+    with patch("app.services.threat_db.urlhaus_sync.httpx.AsyncClient", return_value=client):
         stats = await sync_module.sync_urlhaus()
     assert stats["total"] == 0
     assert stats["inserted"] == 0
