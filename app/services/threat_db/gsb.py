@@ -14,15 +14,22 @@ from app.schemas.analysis import GSBMatch, GSBResult
 
 logger = get_logger(__name__)
 
-_LOGGED_MISSING_KEY = False
+# 키 값별로 1회만 경고. 운영 중 키가 토글되거나(hot reload) 테스트가 키를
+# 바꿔 끼우면 새 상태에 대해 다시 한 번 경고가 나간다.
+_WARNED_KEY_STATES: set[str] = set()
 
 
 def _log_missing_key_once() -> None:
-    # API 키 미설정은 정상 경로이므로 로그 스팸 방지차 1회만 경고.
-    global _LOGGED_MISSING_KEY
-    if not _LOGGED_MISSING_KEY:
-        logger.warning("gsb.api_key_not_configured")
-        _LOGGED_MISSING_KEY = True
+    state = settings.gsb_api_key or ""
+    if state in _WARNED_KEY_STATES:
+        return
+    _WARNED_KEY_STATES.add(state)
+    logger.warning("gsb.api_key_not_configured")
+
+
+def reset_missing_key_warning() -> None:
+    """테스트/hot-reload 시 throttle 상태 초기화."""
+    _WARNED_KEY_STATES.clear()
 
 
 def _build_request_body(url: str) -> dict:
@@ -70,7 +77,7 @@ async def check_gsb(url: str) -> GSBResult:
     if 500 <= status < 600:
         return GSBResult(checked=False, is_threat=False, error=f"server_error_{status}")
     if status != 200:
-        return GSBResult(checked=False, is_threat=False, error=f"http_error_{status}")
+        return GSBResult(checked=False, is_threat=False, error="http_error")
 
     try:
         data = resp.json()
