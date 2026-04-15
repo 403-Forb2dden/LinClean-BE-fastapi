@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy import func, select
-
 from app.db.session import SessionLocal
 from app.models.urlhaus_entry import URLhausEntry
 from app.schemas.analysis import ThreatDbResult
 from app.services.threat_db import check_threat_db
 from app.services.threat_db.urlhaus_sync import sync_urlhaus
+from sqlalchemy import func, select
 
 DIVIDER = "-" * 72
 
@@ -71,6 +70,8 @@ async def main() -> None:
     print()
 
     print(">>> 1) URLhaus 스냅샷 동기화 (수 MB CSV 다운로드·파싱 — 실제 수십 초 소요)")
+    # stats = {inserted, updated, total, failed} — 청크(500행) 단위 커밋이라
+    # 중간에 깨져도 직전 청크까지는 영속화되고 그만큼만 집계된다.
     stats = await sync_urlhaus()
     print(f"    stats: {stats}")
     print()
