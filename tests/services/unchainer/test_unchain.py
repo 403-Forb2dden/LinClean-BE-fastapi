@@ -298,6 +298,28 @@ class TestHeadFallback:
         assert result.error is None
 
     @pytest.mark.asyncio
+    async def test_head_redirect_without_location_falls_back_to_get(self) -> None:
+        """HEAD가 리다이렉트인데 Location 누락 → GET으로 폴백해서 체인 추적."""
+
+        def _side_effect(method: str, url: str) -> httpx.Response:
+            if url == "https://example.com/start":
+                # HEAD는 301인데 Location 헤더 생략, GET은 정상 응답
+                if method == "HEAD":
+                    return _make_response(301)
+                return _make_response(301, {"location": "https://example.com/final"})
+            return _make_response(200)
+
+        client = _mock_client(side_effect=_side_effect)
+
+        with patch(_PATCH_TARGET, return_value=client):
+            result = await unchain_url("https://example.com/start")
+
+        assert result.error is None
+        assert result.final_url == "https://example.com/final"
+        assert result.hops[0].method == "GET"
+        assert result.hops[0].status_code == 301
+
+    @pytest.mark.asyncio
     async def test_head_connect_error_falls_back_to_get(self) -> None:
         """HEAD에서 ConnectError → GET으로 폴백해서 성공."""
 
@@ -366,7 +388,8 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_missing_location_header(self) -> None:
-        client = _mock_client([_make_response(302)])
+        # HEAD·GET 모두 Location 헤더 누락 — 최종적으로 missing_location_header
+        client = _mock_client([_make_response(302), _make_response(302)])
 
         with patch(_PATCH_TARGET, return_value=client):
             result = await unchain_url("https://broken.example.com/")
