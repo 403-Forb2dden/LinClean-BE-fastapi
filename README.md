@@ -68,9 +68,16 @@ linclean-fastapi/
 │       ├── normalizer/               # 1단계: URL 정규화(Canonicalization)
 │       │   ├── __init__.py            # 진입점 (normalize_url re-export)
 │       │   └── normalize.py           # 입력 검증, 스킴·호스트 정규화, 포트·프래그먼트 제거, 퍼센트 인코딩 정돈, 경로 정규화, IDN 디코딩
-│       └── unchainer/                # 1-2단계: URL 언체이닝(리다이렉트 추적)
-│           ├── __init__.py            # 진입점 (unchain_url re-export)
-│           └── unchain.py             # HEAD+GET 폴백, 체인 총 timeout, 스킴 방어, 의심 신호 수집
+│       ├── unchainer/                # 1-2단계: URL 언체이닝(리다이렉트 추적)
+│       │   ├── __init__.py            # 진입점 (unchain_url re-export)
+│       │   └── unchain.py             # HEAD+GET 폴백, 체인 총 timeout, 스킴 방어, 의심 신호 수집
+│       └── threat_db/                # 2단계: 외부 위협 DB 대조
+│           ├── __init__.py            # 진입점 (check_threat_db re-export)
+│           ├── check.py               # GSB + URLhaus 병렬 조회·병합
+│           ├── gsb.py                 # Google Safe Browsing Lookup API
+│           ├── urlhaus.py             # 로컬 SQLite 조회
+│           ├── urlhaus_sync.py        # CSV 다운로드 → SQLite upsert
+│           └── match_keys.py          # URLhaus 매칭 키 생성 (host / host+path)
 │
 ├── alembic/                          # 외부 피드 캐시 스키마 마이그레이션
 │   ├── env.py                        # SQLite + batch mode 설정
@@ -81,12 +88,19 @@ linclean-fastapi/
 │   ├── conftest.py                   # 공용 픽스처
 │   ├── demo/                         # 데모 스크립트
 │   │   ├── demo_normalize.py         # URL 정규화 데모
-│   │   └── demo_unchain.py           # URL 언체이닝 데모
+│   │   ├── demo_unchain.py           # URL 언체이닝 데모
+│   │   └── demo_threat_db.py         # 외부 위협 DB 대조 데모
 │   └── services/
 │       ├── normalizer/
-│       │   └── test_normalize.py     # URL 정규화 단위 테스트 (38개)
-│       └── unchainer/
-│           └── test_unchain.py       # URL 언체이닝 단위 테스트 (23개)
+│       │   └── test_normalize.py     # URL 정규화 단위 테스트
+│       ├── unchainer/
+│       │   └── test_unchain.py       # URL 언체이닝 단위 테스트
+│       └── threat_db/
+│           ├── test_match_keys.py    # URLhaus 매칭 키 단위 테스트
+│           ├── test_gsb.py           # GSB Lookup 단위 테스트
+│           ├── test_urlhaus.py       # URLhaus 조회 단위 테스트
+│           ├── test_urlhaus_sync.py  # URLhaus 동기화 단위 테스트
+│           └── test_check.py         # 병렬 조회·판정·폴백 단위 테스트
 │
 ├── docs/                             # 기획서 등 설계 문서
 │   └── LinClean_기능_초안.pdf
@@ -195,6 +209,24 @@ URLhaus 데이터는 APScheduler 가 주기적으로 CSV 를 다운로드해 로
 upsert 합니다. 분석 시에는 외부 호출 없이 로컬 인덱스만 조회합니다. 두 소스
 중 하나라도 매치되면 그 자체로 강한 위험 신호이며, 점수 가산과 함께 후속
 단계에 결과를 그대로 전달합니다.
+
+**구현 노트 (`services/threat_db/`):**
+
+- **외부 의존성 실패는 파이프라인을 죽이지 않습니다.** GSB / URLhaus / DB /
+  스케줄러 어디서 실패해도 `check_threat_db()` 는 항상 `ThreatDbResult` 를
+  반환하며, 실패 사유는 `error` 필드에 문자열 코드로 기록됩니다. GSB 만 실패한
+  경우 URLhaus 결과 단독으로 `is_malicious` 를 판정하고, 둘 다 실패하면
+  `sources_checked=0` 으로 반환해 상위 레이어가 보수적으로 처리할 수 있게 합니다.
+- **URLhaus 매칭 키**: 기본적으로 host 한 개를 키로 쓰되, GitHub / GitLab /
+  Bitbucket / sites.google.com 같은 다중 테넌트 호스트는
+  `host + path-prefix(N 세그먼트)` 키를 추가로 생성합니다. 계정·리포 단위에서
+  악성 여부가 갈리는 도메인을 host 전체로 블랙리스트화해 오탐하지 않도록 합니다.
+  동기화·조회 모두 동일한 `derive_keys()` 를 사용해 키 일관성을 보장합니다.
+- **스케줄러**: `AsyncIOScheduler(timezone=UTC)` 싱글톤이 `urlhaus_sync` 를
+  `CronTrigger(hour=urlhaus_sync_cron_hour, minute=0)` 로 1일 1회 실행합니다
+  (`coalesce=True, max_instances=1, misfire_grace_time=3600`). 앱 부트 시
+  `urlhaus_sync_on_startup=True` 이면 최초 1회 즉시 동기화를 백그라운드로
+  수행합니다. 테스트에서는 `settings.scheduler_enabled=False` 로 전역 비활성화.
 
 ### 3단계 — 도메인 휴리스틱 분석
 
