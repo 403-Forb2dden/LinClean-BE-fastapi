@@ -55,9 +55,7 @@ class Settings(BaseSettings):
 
     # Google Safe Browsing
     gsb_api_key: str | None = None
-    gsb_api_url: str = (
-        "https://safebrowsing.googleapis.com/v4/threatMatches:find"
-    )
+    gsb_api_url: str = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
     gsb_client_id: str = "linclean"
     gsb_client_version: str = "0.1.0"
     gsb_timeout_seconds: float = 5.0

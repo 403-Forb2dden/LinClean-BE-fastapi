@@ -33,9 +33,7 @@ async def async_session() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    session_maker = async_sessionmaker(
-        bind=engine, expire_on_commit=False, autoflush=False
-    )
+    session_maker = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
     async with session_maker() as session:
         yield session
 

@@ -63,9 +63,7 @@ async def test_host_path_match_github(async_session: AsyncSession) -> None:
         host="github.com",
         match_key="github.com/bad/repo",
     )
-    result = await check_urlhaus(
-        async_session, "https://github.com/bad/repo/issues/1"
-    )
+    result = await check_urlhaus(async_session, "https://github.com/bad/repo/issues/1")
     assert result.is_threat is True
     assert result.match_type == "host_path"
     assert result.matched_key == "github.com/bad/repo"
@@ -87,9 +85,7 @@ async def test_host_path_preferred_over_host(async_session: AsyncSession) -> Non
         host="github.com",
         match_key="github.com/bad/repo",
     )
-    result = await check_urlhaus(
-        async_session, "https://github.com/bad/repo/anything"
-    )
+    result = await check_urlhaus(async_session, "https://github.com/bad/repo/anything")
     assert result.match_type == "host_path"
 
 
@@ -102,9 +98,7 @@ async def test_no_match(async_session: AsyncSession) -> None:
 async def test_db_error_returns_checked_false(async_session: AsyncSession) -> None:
     from sqlalchemy.exc import SQLAlchemyError
 
-    with patch.object(
-        async_session, "execute", AsyncMock(side_effect=SQLAlchemyError("boom"))
-    ):
+    with patch.object(async_session, "execute", AsyncMock(side_effect=SQLAlchemyError("boom"))):
         result = await check_urlhaus(async_session, "https://x.test/")
     assert result.checked is False
     assert result.error == "db_error"

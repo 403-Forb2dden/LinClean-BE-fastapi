@@ -36,7 +36,7 @@ def normalize_url(raw_url: str) -> NormalizeResult:
 
     # 길이 체크 전에 스킴 확정해야 함 — 스킴 붙이면 바이트 늘어남.
     # 단순 "://" 체크는 "example.com/path://weird" 같은 케이스 놓침.
-    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', cleaned):
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://", cleaned):
         cleaned = "https://" + cleaned
 
     max_len = settings.normalizer_max_url_length

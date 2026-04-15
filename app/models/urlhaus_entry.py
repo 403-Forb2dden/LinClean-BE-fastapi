@@ -31,6 +31,4 @@ class URLhausEntry(Base):
     reporter: Mapped[str | None] = mapped_column(String, nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
-    __table_args__ = (
-        Index("ix_urlhaus_entries_host_match_key", "host", "match_key"),
-    )
+    __table_args__ = (Index("ix_urlhaus_entries_host_match_key", "host", "match_key"),)
