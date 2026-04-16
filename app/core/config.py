@@ -79,7 +79,6 @@ class Settings(BaseSettings):
 
     # Scheduler / URLhaus 동기화
     scheduler_enabled: bool = True
-    urlhaus_sync_cron_hour: int = 3  # UTC
     urlhaus_sync_on_startup: bool = True
 
     # RDAP

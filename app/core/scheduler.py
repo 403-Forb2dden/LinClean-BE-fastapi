@@ -1,9 +1,9 @@
-"""APScheduler 싱글톤 — URLhaus 일일 동기화 스케줄링."""
+"""APScheduler 싱글톤 — URLhaus 주기 동기화 스케줄링."""
 
 from __future__ import annotations
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -38,15 +38,18 @@ def start_scheduler() -> None:
 
     scheduler.add_job(
         sync_urlhaus,
-        trigger=CronTrigger(hour=settings.urlhaus_sync_cron_hour, minute=0),
+        trigger=IntervalTrigger(seconds=settings.urlhaus_refresh_interval_seconds),
         id="urlhaus_sync",
         coalesce=True,
         max_instances=1,
-        misfire_grace_time=3600,
+        misfire_grace_time=settings.urlhaus_refresh_interval_seconds,
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("scheduler.started", cron_hour=settings.urlhaus_sync_cron_hour)
+    logger.info(
+        "scheduler.started",
+        interval_seconds=settings.urlhaus_refresh_interval_seconds,
+    )
 
 
 def shutdown_scheduler(wait: bool = False) -> None:
