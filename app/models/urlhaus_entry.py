@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,7 +20,7 @@ class URLhausEntry(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     url: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
-    host: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    host: Mapped[str] = mapped_column(String, nullable=False)
     match_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
     threat: Mapped[str | None] = mapped_column(String, nullable=True)
     tags: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -30,5 +30,3 @@ class URLhausEntry(Base):
     urlhaus_link: Mapped[str | None] = mapped_column(String, nullable=True)
     reporter: Mapped[str | None] = mapped_column(String, nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-
-    __table_args__ = (Index("ix_urlhaus_entries_host_match_key", "host", "match_key"),)
