@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
 from app.services.unchainer.unchain import unchain_url
 
 
@@ -157,7 +156,8 @@ class TestMaxHops:
             nonlocal hop_count
             hop_count += 1
             return _make_response(
-                302, {"location": f"https://example.com/{hop_count}"},
+                302,
+                {"location": f"https://example.com/{hop_count}"},
             )
 
         client = _mock_client(side_effect=_side_effect)

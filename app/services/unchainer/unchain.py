@@ -48,7 +48,9 @@ async def _check_host_safety(url: str) -> str | None:
 
     try:
         addrinfo = await loop.getaddrinfo(
-            hostname, port, type=socket.SOCK_STREAM,
+            hostname,
+            port,
+            type=socket.SOCK_STREAM,
         )
     except socket.gaierror:
         return "dns_failure"
@@ -67,7 +69,7 @@ async def unchain_url(url: str) -> UnchainResult:
             _unchain_url_inner(url),
             timeout=settings.unchain_chain_timeout_seconds,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return UnchainResult(
             input_url=url,
             final_url=url,
@@ -119,7 +121,10 @@ async def _unchain_url_inner(url: str) -> UnchainResult:
                 break
 
             hop, next_url, hop_error = await _follow_one_hop(
-                client, current_url, headers, signals,
+                client,
+                current_url,
+                headers,
+                signals,
             )
 
             if hop is not None:
@@ -190,7 +195,9 @@ async def _follow_one_hop(
         # 5xx 서버 에러 → 체인 중단
         if resp.status_code >= 500:
             hop = HopRecord(
-                url=url, status_code=resp.status_code, method=method,
+                url=url,
+                status_code=resp.status_code,
+                method=method,
             )
             return hop, None, f"server_error_{resp.status_code}"
 
@@ -202,7 +209,9 @@ async def _follow_one_hop(
                 if method == "HEAD":
                     continue
                 hop = HopRecord(
-                    url=url, status_code=resp.status_code, method=method,
+                    url=url,
+                    status_code=resp.status_code,
+                    method=method,
                 )
                 return hop, None, "missing_location_header"
 
@@ -243,7 +252,9 @@ async def _follow_one_hop(
 
         # 리다이렉트 아닌 정상 응답 → 체인 종료
         hop = HopRecord(
-            url=url, status_code=resp.status_code, method=method,
+            url=url,
+            status_code=resp.status_code,
+            method=method,
         )
         return hop, None, None
 

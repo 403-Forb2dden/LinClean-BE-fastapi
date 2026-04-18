@@ -55,9 +55,7 @@ class Settings(BaseSettings):
 
     # Google Safe Browsing
     gsb_api_key: str | None = None
-    gsb_api_url: str = (
-        "https://safebrowsing.googleapis.com/v4/threatMatches:find"
-    )
+    gsb_api_url: str = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
     gsb_client_id: str = "linclean"
     gsb_client_version: str = "0.1.0"
     gsb_timeout_seconds: float = 5.0
@@ -67,6 +65,21 @@ class Settings(BaseSettings):
     urlhaus_online_csv_url: str = "https://urlhaus.abuse.ch/downloads/csv_online/"
     urlhaus_refresh_interval_seconds: int = 60 * 60  # 60 minutes
     urlhaus_download_timeout_seconds: float = 60.0
+    # URLhaus 매칭 키: 다중 테넌트 호스트는 host+path-prefix(N 세그먼트)까지 키로 사용.
+    urlhaus_multitenant_hosts: dict[str, int] = Field(
+        default_factory=lambda: {
+            "github.com": 2,
+            "raw.githubusercontent.com": 2,
+            "gist.github.com": 2,
+            "gitlab.com": 2,
+            "bitbucket.org": 2,
+            "sites.google.com": 2,
+        }
+    )
+
+    # Scheduler / URLhaus 동기화
+    scheduler_enabled: bool = True
+    urlhaus_sync_on_startup: bool = True
 
     # RDAP
     rdap_bootstrap_url: str = "https://rdap.org/domain/"

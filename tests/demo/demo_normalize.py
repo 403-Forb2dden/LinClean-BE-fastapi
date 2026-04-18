@@ -66,7 +66,7 @@ def main() -> None:
             normalize_url(raw)
             print(f"  [{i:02d}] {desc}")
             print(f"       input  : {display_input}")
-            print(f"       result : WARN -- expected error not raised!")
+            print("       result : WARN -- expected error not raised!")
         except NormalizationError as e:
             print(f"  [{i:02d}] {desc}")
             print(f"       input  : {display_input}")
