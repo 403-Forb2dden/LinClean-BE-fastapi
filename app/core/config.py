@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     score_weight_rdap: int = 20
     score_malicious_threshold: int = 50
 
+    # Spring 통신
+    internal_api_key: str
+    spring_internal_url: str = "http://localhost:8080"
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
