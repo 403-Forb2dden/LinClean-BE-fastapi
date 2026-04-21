@@ -1,0 +1,603 @@
+# brands.txt — 피싱/타이포스쿼팅 탐지용 브랜드 도메인 목록
+# 형식: 한 줄에 도메인 하나, # 주석 허용
+
+# ─────────────────────────────────────────
+# 국내 포털 / SNS
+# ─────────────────────────────────────────
+naver.com
+navercloud.com
+navercorp.com
+daum.net
+daum.com
+nate.com
+kakao.com
+kakaotalk.com
+kakaocorp.com
+kakaoenterprise.com
+band.us
+band.naver.com
+cyworld.com
+me2day.net
+blog.naver.com
+cafe.naver.com
+map.naver.com
+shopping.naver.com
+news.naver.com
+finance.naver.com
+webtoon.naver.com
+
+# ─────────────────────────────────────────
+# 국내 금융 — 은행
+# ─────────────────────────────────────────
+kbstar.com
+kbbank.com
+kb.co.kr
+shinhan.com
+shinhanbank.com
+wooribank.com
+woori.com
+ibk.co.kr
+ibkbank.com
+hanabank.com
+hana.com
+bnk.co.kr
+nonghyup.com
+nh.com
+nhbank.com
+kebhana.com
+saemaeulgeumgo.or.kr
+busan.bank
+daegubank.com
+gwangjubank.com
+jeonbukbank.com
+jejubank.com
+scbank.co.kr
+citybank.co.kr
+citi.co.kr
+kakaobank.com
+kbank.co.kr
+tossbank.com
+suhyup.com
+nfcf.co.kr
+
+# ─────────────────────────────────────────
+# 국내 금융 — 카드 / 간편결제 / 핀테크
+# ─────────────────────────────────────────
+kakaopay.com
+toss.im
+tossbank.com
+payco.com
+samsungcard.com
+lottecard.com
+hyundaicard.com
+bccard.com
+shinhancard.com
+wooricard.com
+kbcard.com
+nonghyupcard.com
+hanacard.com
+lottefinance.com
+ssgincome.com
+zeropay.or.kr
+naver.pay
+ssgpay.com
+lpay.com
+chai.finance
+ypay.co.kr
+
+# ─────────────────────────────────────────
+# 국내 금융 — 증권 / 자산운용 / 보험
+# ─────────────────────────────────────────
+kiwoom.com
+miraeasset.com
+samsungfund.com
+hdsecurities.com
+nhqv.com
+daishin.com
+hi-investment.com
+eugenefn.com
+sk.securities
+dbfinancial.com
+koreinvestment.com
+meritz.co.kr
+samsung.life
+hanwhalife.com
+kyobolife.com
+linakorea.com
+axa.co.kr
+db.insurance
+hyundai.insurance
+lotte.insurance
+
+# ─────────────────────────────────────────
+# 국내 증권 / 암호화폐 거래소
+# ─────────────────────────────────────────
+upbit.com
+bithumb.com
+korbit.co.kr
+coinone.co.kr
+gopax.co.kr
+huobi.co.kr
+coinplug.com
+bitsum.com
+probit.com
+flata.exchange
+coredax.com
+
+# ─────────────────────────────────────────
+# 국내 이커머스
+# ─────────────────────────────────────────
+coupang.com
+coupangplay.com
+gmarket.co.kr
+auction.co.kr
+11st.co.kr
+interpark.com
+tmon.co.kr
+wemakeprice.com
+ssg.com
+lotteon.com
+lotteshopping.com
+kurly.com
+marketkurly.com
+musinsa.com
+zigzag.kr
+brandi.co.kr
+ably.kr
+29cm.co.kr
+hm.com
+zara.com
+shein.com
+aboutyou.com
+fashionplate.co.kr
+nsmall.com
+hyundaishopping.com
+hmall.com
+emart.com
+emarttraders.com
+lottemart.com
+homeplus.co.kr
+costco.co.kr
+iherb.com
+elevenstreet.co.kr
+
+# ─────────────────────────────────────────
+# 국내 배달 / O2O / 라이프스타일
+# ─────────────────────────────────────────
+baemin.com
+yogiyo.co.kr
+coupangeats.com
+shuttledelivery.com
+naver.place
+kakaomap.com
+kakaonaviapp.com
+kakaomobility.com
+socar.kr
+greencar.com
+lottaxi.com
+kakao.taxi
+ddangyo.com
+yanolja.com
+goodchoice.kr
+airbnb.co.kr
+syranos.com
+myrealtrip.com
+naver.hotel
+
+# ─────────────────────────────────────────
+# 국내 통신
+# ─────────────────────────────────────────
+kt.com
+olleh.com
+tworld.co.kr
+skt.com
+sktelecom.com
+lguplus.com
+uplus.co.kr
+lg.com
+skbroadband.com
+ktcs.co.kr
+ktwiz.co.kr
+mvno.skt.com
+mvno.kt.com
+
+# ─────────────────────────────────────────
+# 국내 공공 / 정부
+# ─────────────────────────────────────────
+gov.kr
+nhis.or.kr
+nps.or.kr
+hometax.go.kr
+nts.go.kr
+fss.or.kr
+kisa.or.kr
+kcb.co.kr
+nice.co.kr
+mois.go.kr
+mohw.go.kr
+moef.go.kr
+moj.go.kr
+cdc.go.kr
+police.go.kr
+customs.go.kr
+epts.go.kr
+eps.go.kr
+work.go.kr
+koreajobworld.com
+epeople.go.kr
+wetax.go.kr
+irs.go.kr
+judicial.go.kr
+scourt.go.kr
+patent.go.kr
+kipo.go.kr
+mfds.go.kr
+mida.re.kr
+kofia.or.kr
+krx.co.kr
+
+# ─────────────────────────────────────────
+# 국내 미디어 / 콘텐츠
+# ─────────────────────────────────────────
+webtoon.com
+kakaopage.com
+ridibooks.com
+yes24.com
+watcha.com
+wavve.com
+tving.com
+melon.com
+bugs.co.kr
+flocloud.kr
+genie.co.kr
+vibe.naver.com
+chosun.com
+joongang.co.kr
+donga.com
+yonhapnews.co.kr
+mbc.co.kr
+kbs.co.kr
+sbs.co.kr
+jtbc.co.kr
+tvn.com
+ocn.com
+ytn.co.kr
+khan.co.kr
+hani.co.kr
+ohmynews.com
+pressian.com
+mediaus.co.kr
+newsis.com
+newspim.com
+edaily.co.kr
+mt.co.kr
+ajunews.com
+yna.co.kr
+
+# ─────────────────────────────────────────
+# 국내 IT / 스타트업
+# ─────────────────────────────────────────
+krafton.com
+ncsoft.com
+nexon.com
+netmarble.com
+smilegate.com
+com2us.com
+kakao.games
+kakao.corp
+line.me
+naverwebtoon.com
+ncloud.com
+gabia.com
+cafe24.com
+hosting.kr
+iwinv.com
+whois.co.kr
+godaddy.co.kr
+
+# ─────────────────────────────────────────
+# 글로벌 빅테크
+# ─────────────────────────────────────────
+google.com
+gmail.com
+youtube.com
+google.co.kr
+google.co.jp
+google.co.uk
+google.de
+google.fr
+google.com.au
+googleads.com
+googleanalytics.com
+googlepay.com
+apple.com
+icloud.com
+appleid.apple.com
+itunes.com
+appstore.com
+microsoft.com
+outlook.com
+hotmail.com
+live.com
+office.com
+office365.com
+teams.microsoft.com
+azure.com
+windowsazure.com
+microsoftonline.com
+onedrive.com
+skype.com
+xbox.com
+amazon.com
+aws.amazon.com
+amazonpay.com
+primevideo.com
+audible.com
+twitch.tv
+meta.com
+facebook.com
+instagram.com
+whatsapp.com
+messenger.com
+threads.net
+twitter.com
+x.com
+linkedin.com
+pinterest.com
+snapchat.com
+tiktok.com
+reddit.com
+tumblr.com
+quora.com
+medium.com
+substack.com
+
+# ─────────────────────────────────────────
+# 글로벌 금융
+# ─────────────────────────────────────────
+paypal.com
+stripe.com
+wise.com
+revolut.com
+mastercard.com
+visa.com
+americanexpress.com
+amex.com
+citibank.com
+bankofamerica.com
+chase.com
+wellsfargo.com
+hsbc.com
+hsbc.co.uk
+barclays.com
+lloydsbank.com
+natwest.com
+santander.com
+ubs.com
+credit-suisse.com
+deutschebank.com
+bnpparibas.com
+societegenale.com
+inggroup.com
+ing.com
+commerzbank.com
+rabobank.com
+abnamro.com
+coinbase.com
+binance.com
+kraken.com
+bitfinex.com
+gemini.com
+ftx.com
+crypto.com
+bybit.com
+okx.com
+kucoin.com
+
+# ─────────────────────────────────────────
+# 글로벌 이커머스 / 소매
+# ─────────────────────────────────────────
+ebay.com
+etsy.com
+shopify.com
+aliexpress.com
+alibaba.com
+walmart.com
+target.com
+bestbuy.com
+homedepot.com
+costco.com
+wayfair.com
+overstock.com
+newegg.com
+rakuten.com
+lazada.com
+shopee.com
+tokopedia.com
+bukalapak.com
+flipkart.com
+jd.com
+taobao.com
+tmall.com
+pinduoduo.com
+
+# ─────────────────────────────────────────
+# 글로벌 클라우드 / DevTools / 협업
+# ─────────────────────────────────────────
+github.com
+gitlab.com
+bitbucket.org
+stackoverflow.com
+docker.com
+dockerhub.com
+cloudflare.com
+digitalocean.com
+notion.so
+atlassian.com
+jira.atlassian.com
+confluence.atlassian.com
+slack.com
+discord.com
+zoom.us
+figma.com
+miro.com
+trello.com
+asana.com
+monday.com
+airtable.com
+clickup.com
+linear.app
+vercel.com
+netlify.com
+heroku.com
+render.com
+railway.app
+supabase.com
+firebase.google.com
+amplify.aws
+terraform.io
+ansible.com
+kubernetes.io
+helm.sh
+grafana.com
+datadog.com
+newrelic.com
+splunk.com
+elastic.co
+kibana.com
+prometheus.io
+circleci.com
+travisci.com
+jenkins.io
+githubactions.com
+argocd.io
+
+# ─────────────────────────────────────────
+# 글로벌 보안
+# ─────────────────────────────────────────
+auth0.com
+okta.com
+lastpass.com
+1password.com
+bitwarden.com
+norton.com
+mcafee.com
+kaspersky.com
+malwarebytes.com
+crowdstrike.com
+paloaltonetworks.com
+sentinelone.com
+darktrace.com
+fortinet.com
+checkpoint.com
+sophos.com
+trendmicro.com
+avast.com
+avg.com
+eset.com
+bitdefender.com
+cylance.com
+qualys.com
+rapid7.com
+tenable.com
+
+# ─────────────────────────────────────────
+# 글로벌 여행 / 숙박
+# ─────────────────────────────────────────
+booking.com
+airbnb.com
+expedia.com
+tripadvisor.com
+hotels.com
+agoda.com
+kayak.com
+skyscanner.com
+momondo.com
+trivago.com
+vrbo.com
+marriott.com
+hilton.com
+hyatt.com
+ihg.com
+bestwestern.com
+radissonhotels.com
+accor.com
+
+# ─────────────────────────────────────────
+# 글로벌 게임
+# ─────────────────────────────────────────
+steam.com
+steampowered.com
+epicgames.com
+roblox.com
+ea.com
+origin.com
+ubisoft.com
+blizzard.com
+battlenet.com
+playstation.com
+xbox.com
+nintendo.com
+itch.io
+gog.com
+humblebundle.com
+razer.com
+
+# ─────────────────────────────────────────
+# 글로벌 미디어 / 스트리밍 / SaaS
+# ─────────────────────────────────────────
+netflix.com
+spotify.com
+dropbox.com
+wordpress.com
+wix.com
+godaddy.com
+twilio.com
+sendgrid.com
+salesforce.com
+zendesk.com
+hubspot.com
+mailchimp.com
+constantcontact.com
+marketo.com
+pardot.com
+servicenow.com
+workday.com
+sap.com
+oracle.com
+adobe.com
+canva.com
+squarespace.com
+weebly.com
+shopify.ca
+shopify.co.uk
+bigcommerce.com
+magento.com
+prestashop.com
+opencart.com
+woocommerce.com
+hulu.com
+disneyplus.com
+hbomax.com
+peacocktv.com
+paramountplus.com
+appletv.com
+crunchyroll.com
+funimation.com
+vimeo.com
+dailymotion.com
+twitch.com
+youtube.tv
+soundcloud.com
+tidal.com
+deezer.com
+pandora.com
+iheartradio.com
+audible.com
+kindle.com
+scribd.com
+coursera.com
+udemy.com
+edx.org
+khanacademy.org
+duolingo.com
