@@ -12,6 +12,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.db.session import engine
 from app.middleware.request_context import RequestContextMiddleware
+from app.services.domain_heuristic.rdap import aclose_client as aclose_rdap_client
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                     timeout=2.0,
                 )
         shutdown_scheduler(wait=False)
+        await aclose_rdap_client()
         await engine.dispose()
 
 
