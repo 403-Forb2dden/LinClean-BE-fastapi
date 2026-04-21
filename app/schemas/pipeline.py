@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.domain_heuristic import DomainHeuristicResult
 from app.schemas.normalize import NormalizeResult
 from app.schemas.threat_db import ThreatDbResult
 from app.schemas.unchain import UnchainResult
@@ -12,6 +13,7 @@ class PipelineStage(str, Enum):
     NORMALIZE = "normalize"
     UNCHAIN = "unchain"
     THREAT_DB = "threat_db"
+    DOMAIN_HEURISTIC = "domain_heuristic"
 
 
 class PipelineStages(BaseModel):
@@ -20,6 +22,7 @@ class PipelineStages(BaseModel):
     normalize: NormalizeResult
     unchain: UnchainResult
     threat_db: ThreatDbResult
+    domain_heuristic: DomainHeuristicResult
 
 
 class PipelineSuccess(BaseModel):
