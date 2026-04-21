@@ -107,6 +107,33 @@ class Settings(BaseSettings):
     score_weight_rdap: int = 20
     score_malicious_threshold: int = 50
 
+    # 도메인 휴리스틱 점수
+    score_weight_ip_direct: int = 40
+    score_weight_typo_domain: int = 40
+    score_weight_punycode_idn: int = 35
+    score_weight_no_https: int = 30
+    score_weight_new_domain: int = 30
+    score_weight_subdomain_overuse: int = 25
+    score_weight_open_redirect_param: int = 20
+    score_weight_hyphen_overuse: int = 20
+    score_weight_suspicious_tld: int = 20
+    score_weight_dga_like: int = 15
+    score_weight_hosting_platform: int = 15
+
+    # 휴리스틱 점수 캡 — GSB/URLhaus(각 50) high-confidence 시그널을 합산이 압도하지 않도록 클램프
+    domain_heuristic_score_cap: int = 80
+
+    # DGA 탐지 임계값 — 0.7이면 netflix/spotify/snapchat 등 긴 영어 브랜드 오탐
+    dga_entropy_threshold: float = 3.5
+    dga_consonant_ratio_threshold: float = 0.8
+
+    # 서브도메인 레이블 임계값
+    subdomain_label_threshold: int = 4
+
+    # 하이픈/라벨 길이 임계값 — 20자 미만이면 standardchartered(17), samsungelectronics(18) 등 오탐
+    hyphen_count_threshold: int = 3
+    domain_label_length_threshold: int = 20
+
     # Spring 통신
     internal_api_key: str
     spring_internal_url: str = "http://localhost:8080"
