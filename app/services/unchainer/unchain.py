@@ -16,7 +16,6 @@ import httpx
 from app.core.config import settings
 from app.schemas.analysis import HopRecord, UnchainResult
 
-# 리다이렉트로 간주할 상태 코드
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
 
 # 리다이렉트 대상으로 허용하는 스킴 (javascript:, data: 등 차단)
@@ -106,7 +105,6 @@ async def _unchain_url_inner(url: str) -> UnchainResult:
         cookies=None,
     ) as client:
         for _ in range(settings.unchain_max_hops):
-            # 무한 루프 감지
             if current_url in visited:
                 signals.append("redirect_loop")
                 break
@@ -201,7 +199,6 @@ async def _follow_one_hop(
             )
             return hop, None, f"server_error_{resp.status_code}"
 
-        # 리다이렉트 처리
         if resp.status_code in _REDIRECT_CODES:
             raw_location = resp.headers.get("location")
             if not raw_location:
