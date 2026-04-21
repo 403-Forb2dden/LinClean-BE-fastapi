@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28.0",
     "tenacity>=9.0.0",
     "apscheduler>=3.10",
+    "tldextract>=5.1.0",
 ]
 
 [project.optional-dependencies]

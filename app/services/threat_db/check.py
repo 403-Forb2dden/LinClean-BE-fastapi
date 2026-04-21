@@ -7,11 +7,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.schemas.analysis import (
-    GSBResult,
-    ThreatDbResult,
-    URLhausResult,
-)
+from app.schemas.threat_db import GSBResult, ThreatDbResult, URLhausResult
 from app.services.threat_db.gsb import check_gsb
 from app.services.threat_db.urlhaus import check_urlhaus
 

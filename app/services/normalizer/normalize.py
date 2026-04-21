@@ -12,7 +12,7 @@ from urllib.parse import urlparse, urlunparse
 
 from app.core.config import settings
 from app.core.exceptions import NormalizationError
-from app.schemas.analysis import NormalizeResult
+from app.schemas.normalize import NormalizeResult
 
 _DEFAULT_PORTS: dict[str, int] = {"http": 80, "https": 443, "ftp": 21}
 _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https", "ftp"})
