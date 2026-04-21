@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NormalizationError
+from app.schemas.domain_heuristic import DomainHeuristicResult
 from app.schemas.normalize import NormalizeResult
 from app.schemas.pipeline import (
     PipelineFailure,
@@ -15,6 +16,7 @@ from app.schemas.pipeline import (
 )
 from app.schemas.threat_db import ThreatDbResult
 from app.schemas.unchain import UnchainResult
+from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
 from app.services.threat_db import check_threat_db
 from app.services.unchainer import unchain_url
@@ -30,13 +32,36 @@ def _stage_normalize(log: structlog.stdlib.BoundLogger, original_url: str) -> No
 
 async def _stage_unchain(log: structlog.stdlib.BoundLogger, normalized_url: str) -> UnchainResult:
     result = await unchain_url(normalized_url)
-    log.info("pipeline.unchain.done", final_url=result.final_url, hops=result.hop_count, signals=result.signals)
+    log.info(
+        "pipeline.unchain.done",
+        final_url=result.final_url,
+        hops=result.hop_count,
+        signals=result.signals,
+    )
     return result
 
 
-async def _stage_threat_db(log: structlog.stdlib.BoundLogger, final_url: str, session: AsyncSession) -> ThreatDbResult:
+async def _stage_threat_db(
+    log: structlog.stdlib.BoundLogger, final_url: str, session: AsyncSession
+) -> ThreatDbResult:
     result = await check_threat_db(session, final_url)
-    log.info("pipeline.threat_db.done", is_malicious=result.is_malicious, sources_checked=result.sources_checked)
+    log.info(
+        "pipeline.threat_db.done",
+        is_malicious=result.is_malicious,
+        sources_checked=result.sources_checked,
+    )
+    return result
+
+
+async def _stage_domain_heuristic(
+    log: structlog.stdlib.BoundLogger, final_url: str
+) -> DomainHeuristicResult:
+    result = await check_domain_heuristic(final_url)
+    log.info(
+        "pipeline.domain_heuristic.done",
+        score=result.score,
+        signals=[s.value for s in result.signals],
+    )
     return result
 
 
@@ -61,11 +86,17 @@ async def run_pipeline(
 
     unchain = await _stage_unchain(log, norm.normalized_url)
     threat = await _stage_threat_db(log, unchain.final_url, session)
+    heuristic = await _stage_domain_heuristic(log, unchain.final_url)
 
     log.info("pipeline.done", final_url=unchain.final_url)
     return PipelineSuccess(
         analysis_id=analysis_id,
         original_url=original_url,
         final_url=unchain.final_url,
-        stages=PipelineStages(normalize=norm, unchain=unchain, threat_db=threat),
+        stages=PipelineStages(
+            normalize=norm,
+            unchain=unchain,
+            threat_db=threat,
+            domain_heuristic=heuristic,
+        ),
     )
