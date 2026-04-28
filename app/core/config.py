@@ -134,6 +134,67 @@ class Settings(BaseSettings):
     hyphen_count_threshold: int = 3
     domain_label_length_threshold: int = 20
 
+    # 페이지 콘텐츠 정적 분석 (4단계)
+    content_fetch_timeout_seconds: float = 8.0
+    content_fetch_connect_timeout_seconds: float = 3.0
+    content_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MiB 이상이면 끊고 분석
+    content_user_agents: list[str] = Field(
+        default_factory=lambda: [
+            # 분석 엔진이 동일 UA를 반복 노출하면 쉽게 블랙리스트되므로 풀에서 라운드로빈
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                "Version/17.0 Safari/605.1.15"
+            ),
+            (
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/130.0.0.0 Safari/537.36"
+            ),
+        ]
+    )
+    content_external_link_ratio_threshold: float = 0.8
+
+    # 콘텐츠 분석 점수
+    score_weight_brand_impersonation: int = 50
+    score_weight_logo_alt_impersonation: int = 30
+    score_weight_meta_refresh: int = 20
+    score_weight_external_link_overuse: int = 15
+    # 도달 실패(timeout/connect_error/HTTP 5xx 등)에 대한 보수적 가산.
+    # not_html(이미지·PDF), too_large(대용량 정상 페이지), unexpected_redirect(unchainer 누락)는
+    # 정상 컨텐츠 또는 파이프라인 정합성 문제로 보고 점수 가산 없이 시그널만 남긴다.
+    score_weight_content_fetch_failed: int = 10
+    score_weight_ai_phishing: int = 40
+    score_weight_ai_suspicious: int = 20
+    # 4단계 단독 캡 — 컨텐츠 분석 단계 안에서만 적용된다. 전 단계 합산은 별도로 score_total_cap 에서
+    # 다시 100 으로 클램프되므로, 여기를 낮춰도 합산 상한이 자동으로 같이 낮아지는 게 아니다.
+    content_analysis_score_cap: int = 100
+
+    # 1~3단계 합산이 이 임계 이상이면 콘텐츠 정적 분석(네트워크·AI 비용)을 건너뛴다.
+    # README 의 danger(61+) 구간과 정합.
+    score_danger_threshold: int = 61
+    # caution(31~60) 구간 진입 임계. 이 값 미만이면 safe.
+    score_caution_threshold: int = 31
+    # 단계별 점수 합산이 100 을 넘지 않도록 종합 점수에서 캡 적용.
+    score_total_cap: int = 100
+
+    # 4단계 AI 프로바이더 선택.
+    # auto   : OPENAI_API_KEY 있으면 OpenAIProvider, 없으면 NullAIProvider
+    # openai : 강제 OpenAIProvider (키 없으면 경고 + NullAIProvider 폴백)
+    # null   : 비활성 (규칙 점수만 사용)
+    ai_provider: Literal["auto", "openai", "null"] = "auto"
+
+    # OpenAI — 모델 교체는 OPENAI_MODEL 한 줄로 끝난다 (gpt-4o-mini / gpt-4o / gpt-4.1-mini).
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: float = 10.0
+    openai_max_output_tokens: int = 300
+
     # Spring 통신
     internal_api_key: str
     spring_internal_url: str = "http://localhost:8080"
