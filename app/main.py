@@ -12,9 +12,42 @@ from app.core.logging import configure_logging, get_logger
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.db.session import engine
 from app.middleware.request_context import RequestContextMiddleware
+from app.services.content_analyzer.ai import AIProvider, NullAIProvider, set_ai_provider
+from app.services.content_analyzer.ai_openai import OpenAIProvider
+from app.services.content_analyzer.fetch import aclose_client as aclose_fetch_client
 from app.services.domain_heuristic.rdap import aclose_client as aclose_rdap_client
 
 logger = get_logger(__name__)
+
+
+def _select_ai_provider() -> AIProvider:
+    """settings.ai_provider + 키 존재 여부로 프로바이더를 하나 고른다.
+
+    - "null"   : 항상 NullAIProvider (정상 비활성)
+    - "openai" : 키 누락이면 경고 로그 + NullAIProvider(fallback_reason="provider_misconfigured")
+    - "auto"   : 키 있으면 OpenAIProvider, 없으면 NullAIProvider (정상 비활성)
+    """
+    choice = settings.ai_provider
+    if choice == "null":
+        return NullAIProvider()
+    if choice == "openai":
+        if settings.openai_api_key:
+            return OpenAIProvider()
+        # "강제 openai" 인데 키가 없는 misconfiguration — 응답에 fallback 흔적을 남겨
+        # 정상 NullProvider 동작과 운영자가 구분할 수 있게 한다.
+        logger.warning("app.ai_provider.missing_key", provider="openai")
+        return NullAIProvider(fallback_reason="provider_misconfigured")
+    # auto
+    if settings.openai_api_key:
+        return OpenAIProvider()
+    return NullAIProvider()
+
+
+async def _aclose_provider(provider: AIProvider) -> None:
+    # AIProvider Protocol 에는 aclose 가 없다 — 구현체에만 있으면 호출.
+    aclose = getattr(provider, "aclose", None)
+    if aclose is not None:
+        await aclose()
 
 
 @asynccontextmanager
@@ -26,6 +59,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         version=settings.app_version,
     )
     start_scheduler()
+
+    # AI 프로바이더 부트스트랩 — 키가 없으면 NullAIProvider (4단계 AI 추론 비활성).
+    # 로컬/CI 에서도 이 분기로 안전하게 동작하므로 별도 조건이 필요 없다.
+    ai_provider = _select_ai_provider()
+    set_ai_provider(ai_provider)
+    logger.info(
+        "app.ai_provider",
+        provider=type(ai_provider).__name__,
+        choice=settings.ai_provider,
+    )
     startup_task: asyncio.Task | None = None
     if settings.scheduler_enabled and settings.urlhaus_sync_on_startup:
         # 최초 부트 시 즉시 1회 동기화 (백그라운드, 앱 기동은 블로킹하지 않음).
@@ -61,6 +104,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 )
         shutdown_scheduler(wait=False)
         await aclose_rdap_client()
+        await aclose_fetch_client()
+        await _aclose_provider(ai_provider)
         await engine.dispose()
 
 
