@@ -36,7 +36,7 @@ from app.schemas.pipeline import PipelineFailure, PipelineSuccess
 from app.schemas.threat_db import ThreatDbResult
 from app.schemas.unchain import UnchainResult
 from app.services.content_analyzer import analyze_content
-from app.services.content_analyzer.extract import extract_features
+from app.services.content_analyzer.extract import extract_features_async
 from app.services.content_analyzer.fetch import fetch_page
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
@@ -210,7 +210,7 @@ async def dev_content_fetch_extract(body: DevContentRequest) -> DevFetchExtractR
     if not fetch_result.ok:
         return DevFetchExtractResponse(url=target, fetch=fetch_view)
 
-    features = extract_features(fetch_result.html, base_url=target)
+    features = await extract_features_async(fetch_result.html, base_url=target)
     return DevFetchExtractResponse(
         url=target,
         fetch=fetch_view,

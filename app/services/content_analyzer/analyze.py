@@ -19,7 +19,7 @@ from app.schemas.content_analysis import (
     TokenUsage,
 )
 from app.services.content_analyzer.ai import AIPromptContext, AIProvider, get_ai_provider
-from app.services.content_analyzer.extract import ExtractedFeatures, extract_features
+from app.services.content_analyzer.extract import ExtractedFeatures, extract_features_async
 from app.services.content_analyzer.fetch import fetch_page
 from app.services.content_analyzer.signals import ContentScoring, score_content
 
@@ -114,7 +114,7 @@ async def analyze_content(
         )
         return _fetch_failed_result(final_url, fetch_result.error)
 
-    features = extract_features(fetch_result.html, base_url=final_url)
+    features = await extract_features_async(fetch_result.html, base_url=final_url)
     scoring: ContentScoring = score_content(features, final_url)
 
     ai_verdict: AIVerdict | None = None

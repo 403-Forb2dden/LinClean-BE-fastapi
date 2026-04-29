@@ -2,14 +2,21 @@
 
 여기서는 "위험하다"는 판단을 하지 않는다. 단순 추출만 담당하고,
 점수화·브랜드 비교는 signals.py 가 맡는다.
+
+파서는 lxml. 순수 파이썬 html.parser 대비 속도·메모리 모두 유리해서 단건 비용을 줄인다.
+대신 BS4 가 모든 노드를 Tag 래퍼로 감싸는 비용은 그대로라 동시성 N 에 곱셈으로 폭주할 수 있어,
+extract_features_async() 에 글로벌 세마포어 + to_thread 를 둬 피크 메모리에 천장을 박았다.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
+
+from app.core.config import settings
 
 # href 가 상대 경로(빈 scheme)이면 base_url 과 urljoin 후 http(s) 로 정규화되므로
 # 여기서 검사 시점엔 이 둘만 보면 충분하다.
@@ -140,7 +147,7 @@ def _collect_image_alts(soup: BeautifulSoup) -> list[str]:
 
 
 def extract_features(html: str, base_url: str) -> ExtractedFeatures:
-    soup = BeautifulSoup(html or "", "html.parser")
+    soup = BeautifulSoup(html or "", "lxml")
     return ExtractedFeatures(
         title=_extract_title(soup),
         has_password_field=_has_password_field(soup),
@@ -149,3 +156,28 @@ def extract_features(html: str, base_url: str) -> ExtractedFeatures:
         image_alts=_collect_image_alts(soup),
         is_spa_shell=_detect_spa_shell(soup),
     )
+
+
+# 모듈 로드 시점이 아닌 첫 호출 때 만든다 — settings 가 환경변수로 동적으로 결정되는 경로를
+# 막지 않기 위함. 3.10+ 부터 Semaphore 는 특정 루프에 묶이지 않으므로 이대로 안전하다.
+_extract_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_extract_semaphore() -> asyncio.Semaphore:
+    global _extract_semaphore
+    if _extract_semaphore is None:
+        _extract_semaphore = asyncio.Semaphore(settings.content_extract_concurrency)
+    return _extract_semaphore
+
+
+async def extract_features_async(html: str, base_url: str) -> ExtractedFeatures:
+    """비동기 파이프라인용 진입점.
+
+    BS4 파싱은 동기 CPU 작업이라 이벤트 루프를 블록한다. to_thread 로 오프로드해
+    fetch·AI 호출 같은 IO 가 그동안 진행될 수 있게 한다. 동시에, BS4 트리는 본문 대비 ~10배로
+    부풀므로 incoming concurrency 가 폭주하면 메모리도 같이 폭주한다 — 글로벌 세마포어로
+    피크에 천장을 박아 운영 메모리 안에 가둔다.
+    """
+    sem = _get_extract_semaphore()
+    async with sem:
+        return await asyncio.to_thread(extract_features, html, base_url)
