@@ -192,7 +192,7 @@ class TestInvalidHtml:
         assert features.image_alts == []
 
     def test_malformed_html_recovers(self) -> None:
-        """BS4 html.parser는 깨진 HTML도 best-effort 파싱 — 예외 없이 반환."""
+        """BS4 + lxml 은 깨진 HTML 도 best-effort 파싱 — 예외 없이 반환."""
         html = "<html><head><title>X</title></head><body><input type='password'></body>"
         features = extract_features(html, base_url="https://x.test/")
         assert features.title == "X"

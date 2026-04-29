@@ -67,7 +67,7 @@ class TestFetchFailure:
     async def test_fetch_failure_skips_extract_and_ai(self) -> None:
         with (
             _mock_fetch(ok=False, error="connect_error"),
-            patch("app.services.content_analyzer.analyze.extract_features") as ext_mock,
+            patch("app.services.content_analyzer.analyze.extract_features_async") as ext_mock,
             patch("app.services.content_analyzer.analyze.score_content") as sig_mock,
             patch("app.services.content_analyzer.analyze.get_ai_provider") as ai_mock,
         ):
