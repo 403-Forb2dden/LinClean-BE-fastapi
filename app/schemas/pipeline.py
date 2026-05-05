@@ -41,6 +41,23 @@ class PipelineStages(BaseModel):
     content_analysis: ContentAnalysisResult
 
 
+class PipelineStageTimings(BaseModel):
+    """단계별 소요 시간(초). 실행되지 않은 단계는 None 으로 남긴다."""
+
+    normalize: float | None = Field(default=None, ge=0)
+    unchain: float | None = Field(default=None, ge=0)
+    threat_db: float | None = Field(default=None, ge=0)
+    domain_heuristic: float | None = Field(default=None, ge=0)
+    content_analysis: float | None = Field(default=None, ge=0)
+
+
+class PipelineTimings(BaseModel):
+    """파이프라인 전체 wall-clock 시간과 단계별 소요 시간(초)."""
+
+    total_seconds: float = Field(ge=0)
+    stages: PipelineStageTimings
+
+
 class PipelineSuccess(BaseModel):
     """파이프라인 성공 응답. verdict/score 는 stages 합산의 결론이라 응답 상단에 노출 —
     클라이언트가 stages 트리를 파싱하지 않고도 곧장 사용자에게 보여줄 수 있게 한다."""
@@ -51,6 +68,7 @@ class PipelineSuccess(BaseModel):
     final_url: str
     verdict: Verdict
     score: int = Field(ge=0, le=100)
+    timings: PipelineTimings | None = None
     stages: PipelineStages
 
 
@@ -60,6 +78,7 @@ class PipelineFailure(BaseModel):
     original_url: str
     failed_at_stage: PipelineStage
     error: str
+    timings: PipelineTimings | None = None
 
 
 PipelineResult = PipelineSuccess | PipelineFailure
