@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from app.core.config import settings
@@ -32,7 +34,7 @@ def reset_missing_key_warning() -> None:
     _WARNED_KEY_STATES.clear()
 
 
-def _build_request_body(url: str) -> dict:
+def _build_request_body(url: str) -> dict[str, Any]:
     return {
         "client": {
             "clientId": settings.gsb_client_id,

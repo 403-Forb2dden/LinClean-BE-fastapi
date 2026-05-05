@@ -22,12 +22,14 @@ import csv
 import io
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -51,6 +53,10 @@ _CSV_FIELDS = [
 
 # 청크 크기 — 너무 작으면 트랜잭션 오버헤드, 너무 크면 부분 진행 보존 효과 약화.
 CHUNK_SIZE = 500
+
+RawCsvRow = dict[str, str]
+ValueRow = dict[str, Any]
+SyncStats = dict[str, int]
 
 
 def _parse_dt(raw: str | None) -> datetime | None:
@@ -99,7 +105,7 @@ def _iter_raw_rows(csv_text: str) -> Iterator[list[str]]:
     yield from reader
 
 
-def _build_values(raw: dict, now: datetime) -> dict | None:
+def _build_values(raw: RawCsvRow, now: datetime) -> ValueRow | None:
     """CSV 한 행을 ORM values dict 로 변환. 검증 실패 시 None."""
     try:
         entry_id = int(raw["id"])
@@ -131,8 +137,8 @@ def _build_values(raw: dict, now: datetime) -> dict | None:
     }
 
 
-def _chunked(rows: Iterable[dict], size: int) -> Iterator[list[dict]]:
-    chunk: list[dict] = []
+def _chunked(rows: Iterable[ValueRow], size: int) -> Iterator[list[ValueRow]]:
+    chunk: list[ValueRow] = []
     for row in rows:
         chunk.append(row)
         if len(chunk) >= size:
@@ -142,12 +148,18 @@ def _chunked(rows: Iterable[dict], size: int) -> Iterator[list[dict]]:
         yield chunk
 
 
-async def _flush_chunk(session, values_list: list[dict]) -> tuple[int, int]:
+async def _flush_chunk(session: AsyncSession, values_list: list[ValueRow]) -> tuple[int, int]:
     """한 청크를 upsert 하고 (inserted, updated) 카운트 반환.
 
     SQLite 의 `INSERT ... ON CONFLICT DO UPDATE` 는 cursor 결과로 insert/update
     를 구분할 수 없으므로, 청크 단위로 한 번 SELECT 해서 사전 분류한다.
+
+    multi-row VALUES 한 번의 INSERT 로 청크 전체를 처리 — 종전 행당 INSERT 호출은
+    청크 500건 기준 500회 round-trip 이라 SQLite 라도 비용이 더 든다.
     """
+    if not values_list:
+        return 0, 0
+
     ids = [v["id"] for v in values_list]
     existing_ids = set(
         (await session.execute(select(URLhausEntry.id).where(URLhausEntry.id.in_(ids))))
@@ -155,27 +167,24 @@ async def _flush_chunk(session, values_list: list[dict]) -> tuple[int, int]:
         .all()
     )
 
-    inserted = 0
-    updated = 0
-    for values in values_list:
-        stmt = sqlite_insert(URLhausEntry).values(**values)
-        update_cols = {c: stmt.excluded[c] for c in values if c != "id"}
-        stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=update_cols)
-        await session.execute(stmt)
-        if values["id"] in existing_ids:
-            updated += 1
-        else:
-            inserted += 1
+    stmt = sqlite_insert(URLhausEntry).values(values_list)
+    # 모든 values 가 동일한 키 셋을 갖는다는 전제 — _build_values 가 보장.
+    update_cols = {c: stmt.excluded[c] for c in values_list[0] if c != "id"}
+    stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=update_cols)
+    await session.execute(stmt)
+
+    updated = sum(1 for v in values_list if v["id"] in existing_ids)
+    inserted = len(values_list) - updated
     return inserted, updated
 
 
-async def sync_urlhaus() -> dict:
+async def sync_urlhaus() -> SyncStats:
     """URLhaus CSV 를 동기화하고 {inserted, updated, total, failed} 통계 반환.
 
     `stats` 는 **실제 DB 에 커밋된 행 수** 만 누적한다. 중간 청크에서 오류가 나도
     직전까지의 청크는 영속화되어 있고, 그만큼만 카운트된다.
     """
-    stats = {"inserted": 0, "updated": 0, "total": 0, "failed": 0}
+    stats: SyncStats = {"inserted": 0, "updated": 0, "total": 0, "failed": 0}
 
     csv_text = await _fetch_csv()
     if csv_text is None:
@@ -183,7 +192,7 @@ async def sync_urlhaus() -> dict:
 
     now = datetime.now(UTC).replace(tzinfo=None)
 
-    def _values_stream() -> Iterator[dict]:
+    def _values_stream() -> Iterator[ValueRow]:
         for raw in _iter_raw_rows(csv_text):
             stats["total"] += 1
             if len(raw) < len(_CSV_FIELDS):
