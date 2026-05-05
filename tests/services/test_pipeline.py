@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -14,7 +15,9 @@ from app.schemas.pipeline import PipelineFailure, PipelineStage, PipelineSuccess
 from app.schemas.threat_db import GSBMatch, GSBResult, ThreatDbResult, URLhausResult
 from app.schemas.unchain import UnchainResult
 from app.services.pipeline import run_pipeline
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _make_unchain(final_url: str) -> UnchainResult:
@@ -103,6 +106,13 @@ async def test_run_pipeline_includes_domain_heuristic_stage(async_session: Async
     assert result.stages.domain_heuristic.signals == [DomainHeuristicSignal.HOSTING_PLATFORM]
     assert result.stages.content_analysis.final_url == final_url
     assert result.stages.content_analysis.fetched is True
+    assert result.timings is not None
+    assert result.timings.total_seconds >= 0
+    assert result.timings.stages.normalize is not None
+    assert result.timings.stages.unchain is not None
+    assert result.timings.stages.threat_db is not None
+    assert result.timings.stages.domain_heuristic is not None
+    assert result.timings.stages.content_analysis is not None
     # threat_db → domain_heuristic → content_analysis 순서 — 모두 unchain.final_url 기준
     mock_heuristic.assert_awaited_once_with(final_url)
     mock_content.assert_awaited_once()
@@ -130,6 +140,13 @@ async def test_run_pipeline_normalize_failure_skips_heuristic(
 
     assert isinstance(result, PipelineFailure)
     assert result.failed_at_stage == PipelineStage.NORMALIZE
+    assert result.timings is not None
+    assert result.timings.total_seconds >= 0
+    assert result.timings.stages.normalize is not None
+    assert result.timings.stages.unchain is None
+    assert result.timings.stages.threat_db is None
+    assert result.timings.stages.domain_heuristic is None
+    assert result.timings.stages.content_analysis is None
     mock_h.assert_not_awaited()
     mock_c.assert_not_awaited()
 

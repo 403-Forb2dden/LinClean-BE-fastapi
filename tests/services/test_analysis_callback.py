@@ -13,7 +13,9 @@ from app.schemas.pipeline import (
     PipelineFailure,
     PipelineStage,
     PipelineStages,
+    PipelineStageTimings,
     PipelineSuccess,
+    PipelineTimings,
     Verdict,
 )
 from app.schemas.threat_db import GSBResult, ThreatDbResult, URLhausResult
@@ -29,6 +31,16 @@ def _success_result() -> PipelineSuccess:
         final_url=final_url,
         verdict=Verdict.SAFE,
         score=0,
+        timings=PipelineTimings(
+            total_seconds=0.123,
+            stages=PipelineStageTimings(
+                normalize=0.001,
+                unchain=0.002,
+                threat_db=0.003,
+                domain_heuristic=0.004,
+                content_analysis=0.005,
+            ),
+        ),
         stages=PipelineStages(
             normalize=NormalizeResult(
                 original_url="https://bit.ly/a",
@@ -98,6 +110,16 @@ async def test_posts_success_callback_payload(monkeypatch: pytest.MonkeyPatch) -
     assert payload["engineVersion"] == settings.app_version
     assert payload["analyzedAt"] == "2026-04-07T05:42:11Z"
     assert payload["elapsedMs"] == 123
+    assert payload["timings"] == {
+        "total_seconds": 0.123,
+        "stages": {
+            "normalize": 0.001,
+            "unchain": 0.002,
+            "threat_db": 0.003,
+            "domain_heuristic": 0.004,
+            "content_analysis": 0.005,
+        },
+    }
     assert payload["stages"]["threat_db"]["is_malicious"] is False
 
 
@@ -138,6 +160,10 @@ async def test_posts_failure_callback_payload(monkeypatch: pytest.MonkeyPatch) -
         original_url="not a url",
         failed_at_stage=PipelineStage.NORMALIZE,
         error="invalid url",
+        timings=PipelineTimings(
+            total_seconds=0.001,
+            stages=PipelineStageTimings(normalize=0.001),
+        ),
     )
 
     with patch("app.services.analysis_callback.httpx.AsyncClient", return_value=mock_client):
@@ -159,4 +185,6 @@ async def test_posts_failure_callback_payload(monkeypatch: pytest.MonkeyPatch) -
         "stage": "normalize",
         "message": "invalid url",
     }
+    assert payload["timings"]["total_seconds"] == 0.001
+    assert payload["timings"]["stages"]["normalize"] == 0.001
     assert "stages" not in payload
