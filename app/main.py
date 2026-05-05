@@ -12,8 +12,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.db.session import engine
 from app.middleware.request_context import RequestContextMiddleware
-from app.services.content_analyzer.ai import AIProvider, NullAIProvider, set_ai_provider
-from app.services.content_analyzer.ai_openai import OpenAIProvider
+from app.services.content_analyzer.ai import AIProvider, set_ai_provider
 from app.services.content_analyzer.fetch import aclose_client as aclose_fetch_client
 from app.services.domain_heuristic.rdap import aclose_client as aclose_rdap_client
 from app.services.unchainer.unchain import aclose_client as aclose_unchain_client
@@ -22,26 +21,10 @@ logger = get_logger(__name__)
 
 
 def _select_ai_provider() -> AIProvider:
-    """settings.ai_provider + 키 존재 여부로 프로바이더를 하나 고른다.
+    """OpenAIProvider 를 고정 사용한다. SDK import 는 provider 내부에서 infer 시점까지 지연한다."""
+    from app.services.content_analyzer.ai_openai import OpenAIProvider
 
-    - "null"   : 항상 NullAIProvider (정상 비활성)
-    - "openai" : 키 누락이면 경고 로그 + NullAIProvider(fallback_reason="provider_misconfigured")
-    - "auto"   : 키 있으면 OpenAIProvider, 없으면 NullAIProvider (정상 비활성)
-    """
-    choice = settings.ai_provider
-    if choice == "null":
-        return NullAIProvider()
-    if choice == "openai":
-        if settings.openai_api_key:
-            return OpenAIProvider()
-        # "강제 openai" 인데 키가 없는 misconfiguration — 응답에 fallback 흔적을 남겨
-        # 정상 NullProvider 동작과 운영자가 구분할 수 있게 한다.
-        logger.warning("app.ai_provider.missing_key", provider="openai")
-        return NullAIProvider(fallback_reason="provider_misconfigured")
-    # auto
-    if settings.openai_api_key:
-        return OpenAIProvider()
-    return NullAIProvider()
+    return OpenAIProvider()
 
 
 async def _aclose_provider(provider: AIProvider) -> None:
