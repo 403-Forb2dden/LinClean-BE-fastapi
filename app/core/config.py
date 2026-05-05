@@ -84,8 +84,8 @@ class Settings(BaseSettings):
     # RDAP
     rdap_bootstrap_url: str = "https://rdap.org/domain/"
     rdap_timeout_seconds: float = 5.0
-    rdap_cache_ttl_seconds: int = 60 * 60 * 24  # 24h
-    # 24h TTL 동안 누적될 수 있는 도메인 엔트리 상한. 무작위 도메인 트래픽이 들어와도
+    rdap_cache_ttl_seconds: int = 60 * 60 * 24 * 7  # 7d
+    # TTL 동안 누적될 수 있는 도메인 엔트리 상한. 무작위 도메인 트래픽이 들어와도
     # 메모리가 무한 성장하지 않도록 LRU 로 끊는다. 일 100만 URL 기준 도메인 수 5만 이하 가정.
     rdap_cache_max_entries: int = 50_000
     rdap_new_domain_threshold_days: int = 30
