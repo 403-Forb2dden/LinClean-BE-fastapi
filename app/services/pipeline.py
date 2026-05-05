@@ -7,11 +7,11 @@ from contextlib import suppress
 from urllib.parse import urlparse
 
 import structlog
-import tldextract
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import NormalizationError
+from app.core.tld import extract_url_parts
 from app.schemas.content_analysis import ContentAnalysisResult
 from app.schemas.domain_heuristic import DomainHeuristicResult
 from app.schemas.normalize import NormalizeResult
@@ -152,7 +152,7 @@ def _skipped_heuristic(final_url: str) -> DomainHeuristicResult:
     full host 를 쓰면 같은 필드에 의미가 두 가지로 갈리고, 다운스트림에서
     `signin.evil.example.com` 와 `example.com` 이 다른 버킷으로 잡힌다.
     """
-    ext = tldextract.extract(final_url)
+    ext = extract_url_parts(final_url)
     domain = ext.top_domain_under_public_suffix or (urlparse(final_url).hostname or "")
     return DomainHeuristicResult(
         domain=domain,
@@ -184,11 +184,14 @@ async def _run_stage_2_and_3(
             return_when=asyncio.FIRST_COMPLETED,
         )
 
+        # short-circuit 시 두 분기 모두 _skipped_heuristic 으로 통일한다 — task 종료 순서에
+        # 따라 응답 score 가 placeholder(0) ↔ 실제 점수(15~80) 로 갈리는 비결정성을 제거.
+        # verdict 는 어차피 DANGER 강제라 사용자 영향은 없지만, 옵저버빌리티/회귀 재현성을
+        # 위해 동일 입력에 동일 score 가 나오도록 박는다.
         if threat_task in done:
             threat = threat_task.result()
             if threat.is_malicious:
                 # RDAP 대기로 5s 가까이 떠 있을 수 있는 heuristic 을 cancel 로 회수.
-                # danger 확정이니 heuristic 점수는 verdict 에 영향을 주지 못한다.
                 heur_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await heur_task
@@ -199,8 +202,11 @@ async def _run_stage_2_and_3(
         # heuristic 이 먼저 끝난 경로. threat 는 이미 거의 끝났을 가능성이 높으므로 대기한다.
         heuristic = heur_task.result()
         threat = await threat_task
-        # 양쪽 다 완료된 뒤에 malicious 로 드러난 경우는 4단계만 skip 하면 된다.
-        return threat, heuristic, threat.is_malicious
+        if threat.is_malicious:
+            # 양쪽 다 완료된 뒤 malicious 로 드러난 경우 — heuristic 은 실제 점수가 있지만
+            # 위 분기와 응답 일관성을 맞추기 위해 placeholder 로 갈아치운다.
+            return threat, _skipped_heuristic(final_url), True
+        return threat, heuristic, False
     except BaseException:
         # 상위 cancel 또는 stage 내부 예외 — 남은 task 가 고아로 떠돌지 않게 정리하고 전파.
         for task in (threat_task, heur_task):
