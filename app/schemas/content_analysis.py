@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 class ContentSignal(StrEnum):
     BRAND_IMPERSONATION_FORM = "BRAND_IMPERSONATION_FORM"
     LOGO_ALT_IMPERSONATION = "LOGO_ALT_IMPERSONATION"
+    CREDENTIAL_FORM_EXTERNAL = "CREDENTIAL_FORM_EXTERNAL"
     META_REFRESH = "META_REFRESH"
+    EXTERNAL_META_REFRESH = "EXTERNAL_META_REFRESH"
     EXTERNAL_LINK_OVERUSE = "EXTERNAL_LINK_OVERUSE"
     # 초기 HTML 이 JS 마운트 셸만 담고 있어 정적 추출로 input/form 판정이 불가한 상태.
     # 점수 가산 없이 판정 불가 플래그로만 사용 — AI 프롬프트에도 힌트로 전달된다.
@@ -45,7 +47,9 @@ class ContentAnalysisResult(BaseModel):
 
     title: str | None = None
     has_password_field: bool = False
+    has_password_form_external_action: bool = False
     has_meta_refresh: bool = False
+    has_external_meta_refresh: bool = False
     external_link_ratio: float | None = None
     brand_impersonation: bool = False
     logo_alt_impersonation: bool = False
@@ -88,14 +92,16 @@ class FetchStatusView(BaseModel):
 class ExtractedFeaturesView(BaseModel):
     title: str | None = None
     has_password_field: bool = False
+    has_password_form_external_action: bool = False
     has_meta_refresh: bool = False
+    has_external_meta_refresh: bool = False
     external_link_ratio: float | None = None
     image_alts: list[str] = Field(default_factory=list)
     is_spa_shell: bool = False
 
 
-class DevFetchExtractResponse(BaseModel):
-    """디버그 엔드포인트 전용 — fetch 단계 상태 + 파싱 결과 + HTML preview."""
+class FetchExtractResponse(BaseModel):
+    """fetch 단계 상태 + 파싱 결과 + HTML preview."""
 
     url: str
     fetch: FetchStatusView

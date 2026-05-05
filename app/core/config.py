@@ -85,10 +85,19 @@ class Settings(BaseSettings):
     rdap_bootstrap_url: str = "https://rdap.org/domain/"
     rdap_timeout_seconds: float = 5.0
     rdap_cache_ttl_seconds: int = 60 * 60 * 24  # 24h
+    # 24h TTL 동안 누적될 수 있는 도메인 엔트리 상한. 무작위 도메인 트래픽이 들어와도
+    # 메모리가 무한 성장하지 않도록 LRU 로 끊는다. 일 100만 URL 기준 도메인 수 5만 이하 가정.
+    rdap_cache_max_entries: int = 50_000
     rdap_new_domain_threshold_days: int = 30
 
     # 정규화
     normalizer_max_url_length: int = 1024
+
+    # DNS 해석 캐시 — fetch / unchain 양쪽이 같은 호스트를 반복 해석하는 비용 제거.
+    # SSRF 방어선이 의존하는 결과라 TTL 은 짧게 (30초) — 공격자가 캐시 hit 동안 IP 를
+    # 사설 대역으로 재해석할 가능성을 최소화. 보안 위협보다 성능 보강이 주 목적.
+    dns_cache_ttl_seconds: int = 30
+    dns_cache_max_entries: int = 10_000
 
     # 언체이닝
     unchain_max_hops: int = 5
@@ -138,6 +147,9 @@ class Settings(BaseSettings):
     content_fetch_timeout_seconds: float = 8.0
     content_fetch_connect_timeout_seconds: float = 3.0
     content_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MiB 이상이면 끊고 분석
+    # DNS rebinding 잔여 위험은 앱 레벨 사전 해석만으로 완전히 닫을 수 없다. 운영에서 분석 전용
+    # egress 프록시를 두는 경우 이 값으로 fetch 트래픽을 강제 경유시킨다.
+    content_fetch_proxy_url: str | None = None
     content_user_agents: list[str] = Field(
         default_factory=lambda: [
             # 분석 엔진이 동일 UA를 반복 노출하면 쉽게 블랙리스트되므로 풀에서 라운드로빈
@@ -166,7 +178,9 @@ class Settings(BaseSettings):
     # 콘텐츠 분석 점수
     score_weight_brand_impersonation: int = 50
     score_weight_logo_alt_impersonation: int = 30
+    score_weight_credential_form_external: int = 45
     score_weight_meta_refresh: int = 20
+    score_weight_external_meta_refresh: int = 25
     score_weight_external_link_overuse: int = 15
     # 도달 실패(timeout/connect_error/HTTP 5xx 등)에 대한 보수적 가산.
     # not_html(이미지·PDF), too_large(대용량 정상 페이지), unexpected_redirect(unchainer 누락)는

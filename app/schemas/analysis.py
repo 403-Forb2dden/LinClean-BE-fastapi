@@ -4,8 +4,8 @@ from app.schemas.content_analysis import (
     AIVerdict,
     ContentAnalysisResult,
     ContentSignal,
-    DevFetchExtractResponse,
     ExtractedFeaturesView,
+    FetchExtractResponse,
     FetchStatusView,
 )
 from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSignal, RdapInfo
@@ -26,10 +26,10 @@ __all__ = [
     "AnalyzeRequest",
     "ContentAnalysisResult",
     "ContentSignal",
-    "DevFetchExtractResponse",
     "DomainHeuristicResult",
     "DomainHeuristicSignal",
     "ExtractedFeaturesView",
+    "FetchExtractResponse",
     "FetchStatusView",
     "GSBMatch",
     "GSBResult",
