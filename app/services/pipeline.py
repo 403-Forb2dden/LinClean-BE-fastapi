@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Awaitable
 from contextlib import suppress
+from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlparse
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import NormalizationError
@@ -19,7 +21,9 @@ from app.schemas.pipeline import (
     PipelineFailure,
     PipelineStage,
     PipelineStages,
+    PipelineStageTimings,
     PipelineSuccess,
+    PipelineTimings,
     Verdict,
 )
 from app.schemas.threat_db import ThreatDbResult
@@ -31,6 +35,42 @@ from app.services.threat_db import check_threat_db
 from app.services.unchainer import unchain_url
 
 logger = structlog.get_logger(__name__)
+
+T = TypeVar("T")
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _elapsed_seconds(started: float) -> float:
+    return round(time.perf_counter() - started, 6)
+
+
+def _set_stage_timing(
+    timings: PipelineStageTimings,
+    stage: PipelineStage,
+    started: float,
+) -> None:
+    setattr(timings, stage.value, _elapsed_seconds(started))
+
+
+def _build_timings(started: float, stage_timings: PipelineStageTimings) -> PipelineTimings:
+    return PipelineTimings(
+        total_seconds=_elapsed_seconds(started),
+        stages=stage_timings,
+    )
+
+
+async def _timed_async_stage(
+    timings: PipelineStageTimings,
+    stage: PipelineStage,
+    coro: Awaitable[T],
+) -> T:
+    started = time.perf_counter()
+    try:
+        return await coro
+    finally:
+        _set_stage_timing(timings, stage, started)
 
 
 def _stage_normalize(log: structlog.stdlib.BoundLogger, original_url: str) -> NormalizeResult:
@@ -167,6 +207,7 @@ async def _run_stage_2_and_3(
     log: structlog.stdlib.BoundLogger,
     final_url: str,
     session: AsyncSession,
+    timings: PipelineStageTimings,
 ) -> tuple[ThreatDbResult, DomainHeuristicResult, bool]:
     """2·3단계를 병렬 실행한다. threat_db 가 먼저 malicious 로 끝나면 heuristic 을
     즉시 cancel 하고 조기 종료 플래그를 세워 반환한다.
@@ -175,8 +216,20 @@ async def _run_stage_2_and_3(
     short_circuited=True 면 heuristic 은 placeholder 이고 4단계는 skip 대상.
     `CancelledError` 와 stage 내부 예외는 남은 task 를 정리한 뒤 그대로 re-raise.
     """
-    threat_task = asyncio.create_task(_stage_threat_db(log, final_url, session))
-    heur_task = asyncio.create_task(_stage_domain_heuristic(log, final_url))
+    threat_task = asyncio.create_task(
+        _timed_async_stage(
+            timings,
+            PipelineStage.THREAT_DB,
+            _stage_threat_db(log, final_url, session),
+        )
+    )
+    heur_task = asyncio.create_task(
+        _timed_async_stage(
+            timings,
+            PipelineStage.DOMAIN_HEURISTIC,
+            _stage_domain_heuristic(log, final_url),
+        )
+    )
 
     try:
         done, _ = await asyncio.wait(
@@ -189,14 +242,14 @@ async def _run_stage_2_and_3(
         # verdict 는 어차피 DANGER 강제라 사용자 영향은 없지만, 옵저버빌리티/회귀 재현성을
         # 위해 동일 입력에 동일 score 가 나오도록 박는다.
         if threat_task in done:
-            threat = threat_task.result()
+            threat: ThreatDbResult = threat_task.result()
             if threat.is_malicious:
                 # RDAP 대기로 5s 가까이 떠 있을 수 있는 heuristic 을 cancel 로 회수.
                 heur_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await heur_task
                 return threat, _skipped_heuristic(final_url), True
-            heuristic = await heur_task
+            heuristic: DomainHeuristicResult = await heur_task
             return threat, heuristic, False
 
         # heuristic 이 먼저 끝난 경로. threat 는 이미 거의 끝났을 가능성이 높으므로 대기한다.
@@ -222,24 +275,34 @@ async def run_pipeline(
 ) -> PipelineSuccess | PipelineFailure:
     log = logger.bind(analysis_id=analysis_id)
     log.info("pipeline.start", url=original_url)
+    total_started = time.perf_counter()
+    stage_timings = PipelineStageTimings()
 
+    stage_started = time.perf_counter()
     try:
         norm = _stage_normalize(log, original_url)
     except NormalizationError as exc:
+        _set_stage_timing(stage_timings, PipelineStage.NORMALIZE, stage_started)
         log.warning("pipeline.failed", stage=PipelineStage.NORMALIZE, error=str(exc))
         return PipelineFailure(
             analysis_id=analysis_id,
             original_url=original_url,
             failed_at_stage=PipelineStage.NORMALIZE,
             error=str(exc),
+            timings=_build_timings(total_started, stage_timings),
         )
+    _set_stage_timing(stage_timings, PipelineStage.NORMALIZE, stage_started)
 
-    unchain = await _stage_unchain(log, norm.normalized_url)
+    unchain: UnchainResult = await _timed_async_stage(
+        stage_timings,
+        PipelineStage.UNCHAIN,
+        _stage_unchain(log, norm.normalized_url),
+    )
     # 2·3단계는 둘 다 unchain.final_url 만 필요하고 서로 독립이라 병렬로 돈다.
     # threat_db 가 먼저 malicious 로 끝나면 verdict 가 이미 danger 로 확정이므로
     # heuristic 을 cancel 하고 4단계까지 skip — 여기서 조기 종료가 일어난다.
     threat, heuristic, short_circuited = await _run_stage_2_and_3(
-        log, unchain.final_url, session
+        log, unchain.final_url, session, stage_timings
     )
 
     if short_circuited:
@@ -249,7 +312,9 @@ async def run_pipeline(
             gsb_threat=threat.gsb.is_threat,
             urlhaus_threat=threat.urlhaus.is_threat,
         )
+        stage_started = time.perf_counter()
         content = skipped_already_danger(unchain.final_url)
+        _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
     else:
         # 이미 danger 확정된 URL은 페이지를 받아보지 않는다 — 네트워크·AI 비용 절감.
         # 판정이 바뀌지 않을 단계에 초 단위 지연과 건당 원화를 쓸 이유가 없다.
@@ -260,10 +325,16 @@ async def run_pipeline(
                 reason=("threat_db_match" if threat.is_malicious else "already_danger"),
                 preceding_score=preceding,
             )
+            stage_started = time.perf_counter()
             content = skipped_already_danger(unchain.final_url)
+            _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
         else:
             upstream = _collect_upstream_signals(threat, heuristic)
-            content = await _stage_content_analysis(log, unchain.final_url, upstream)
+            content: ContentAnalysisResult = await _timed_async_stage(
+                stage_timings,
+                PipelineStage.CONTENT_ANALYSIS,
+                _stage_content_analysis(log, unchain.final_url, upstream),
+            )
 
     score = _total_score(threat, heuristic, content)
     verdict = _decide_verdict(score, threat)
@@ -279,6 +350,7 @@ async def run_pipeline(
         final_url=unchain.final_url,
         verdict=verdict,
         score=score,
+        timings=_build_timings(total_started, stage_timings),
         stages=PipelineStages(
             normalize=norm,
             unchain=unchain,
