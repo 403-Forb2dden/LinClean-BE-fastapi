@@ -16,9 +16,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-import tldextract
-
 from app.core.config import settings
+from app.core.tld import extract_url_parts
 from app.schemas.content_analysis import ContentSignal
 from app.services.content_analyzer.extract import ExtractedFeatures
 
@@ -42,7 +41,7 @@ def _read_brand_labels() -> frozenset[str]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        ext = tldextract.extract(f"https://{line}")
+        ext = extract_url_parts(f"https://{line}")
         if ext.domain and len(ext.domain) >= _MIN_BRAND_LEN:
             labels.add(ext.domain.lower())
     if not labels:
@@ -59,6 +58,10 @@ def _brand_label_index() -> tuple[frozenset[str], frozenset[str], re.Pattern[str
     예전엔 모듈 임포트 시점에 즉시 raise 하는 방식이라 라벨 파일 경로 변경/스왑 시
     테스트 픽스처 단계에서 import 자체가 죽는 문제가 있었다. lru_cache 로 첫 호출
     시점까지 미루고, 테스트는 `_brand_label_index.cache_clear()` 로 리셋하면 된다.
+
+    운영 정책 — brands.txt 갱신은 프로세스 재시작으로 반영. 핫 리로드는 지원하지 않는다.
+    런타임 갱신이 필요해지면 SIGHUP 핸들러나 admin endpoint 로 cache_clear() 를 호출하는
+    경로를 별도로 도입해야 한다.
     """
     labels = _read_brand_labels()
     ascii_labels = frozenset(label for label in labels if label.isascii())
@@ -80,7 +83,7 @@ class ContentScoring:
 
 
 def _url_brand_label(final_url: str) -> str:
-    ext = tldextract.extract(final_url)
+    ext = extract_url_parts(final_url)
     return (ext.domain or "").lower()
 
 
@@ -119,6 +122,10 @@ def score_content(features: ExtractedFeatures, final_url: str) -> ContentScoring
             result.signals.append(ContentSignal.BRAND_IMPERSONATION_FORM)
             result.score += settings.score_weight_brand_impersonation
 
+    if features.has_password_form_external_action:
+        result.signals.append(ContentSignal.CREDENTIAL_FORM_EXTERNAL)
+        result.score += settings.score_weight_credential_form_external
+
     alt_brands: set[str] = set()
     for alt in features.image_alts:
         alt_brands |= _brands_in_text(alt)
@@ -130,6 +137,9 @@ def score_content(features: ExtractedFeatures, final_url: str) -> ContentScoring
     if features.has_meta_refresh:
         result.signals.append(ContentSignal.META_REFRESH)
         result.score += settings.score_weight_meta_refresh
+        if features.has_external_meta_refresh:
+            result.signals.append(ContentSignal.EXTERNAL_META_REFRESH)
+            result.score += settings.score_weight_external_meta_refresh
 
     if (
         features.external_link_ratio is not None

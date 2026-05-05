@@ -25,6 +25,8 @@ class AIPromptContext:
     # True 면 정적 추출이 결정적이지 않음 — has_password_field=False 를
     # "폼 없음" 으로 단정하면 안 된다.
     is_spa_shell: bool = False
+    has_password_form_external_action: bool = False
+    has_external_meta_refresh: bool = False
     # 상위 단계(도메인 휴리스틱·threat_db)에서 이미 잡힌 시그널 코드 목록.
     # AI 가 페이지 피처 단독으로는 결론 내기 약한 케이스에 사전 정보로 활용한다.
     # 예: TYPO_DOMAIN + 브랜드 title + 비밀번호 폼이면 단독 페이지 분석보다 강한 phishing 신호.

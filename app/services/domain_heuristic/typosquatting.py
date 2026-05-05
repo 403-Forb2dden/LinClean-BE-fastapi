@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import tldextract
-
 from app.core.logging import get_logger
+from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import DomainHeuristicSignal
 from app.services.domain_heuristic.patterns import HOSTING_PLATFORMS
 
@@ -25,7 +24,7 @@ def _load_brands() -> list[tuple[str, str]]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        ext = tldextract.extract(f"https://{line}")
+        ext = extract_url_parts(f"https://{line}")
         if ext.domain and ext.suffix:
             key = (ext.domain, ext.suffix)
             if key not in seen:
@@ -60,7 +59,7 @@ _MIN_FUZZY_LEN = 5  # 4자 이하 브랜드는 편집거리 1~2 오탐이 심해
 
 
 def check_typosquatting(url: str) -> DomainHeuristicSignal | None:
-    ext = tldextract.extract(url)
+    ext = extract_url_parts(url)
     if not ext.top_domain_under_public_suffix:
         return None
 

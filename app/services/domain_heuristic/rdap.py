@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from datetime import UTC, datetime
 
 import httpx
-import tldextract
+from cachetools import TTLCache  # type: ignore[import-untyped]
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import RdapInfo
 
 logger = get_logger(__name__)
 
-# domain → (RdapInfo | None, expire_at: monotonic timestamp)
-_cache: dict[str, tuple[RdapInfo | None, float]] = {}
+# domain → RdapInfo | None. TTL 만료 + LRU eviction 모두 cachetools 가 관리.
+# 24h TTL 동안 무작위 도메인 트래픽으로 dict 가 무한 성장하던 종전 동작을 maxsize 로 천장 박음.
+# TTLCache 는 thread-safe 가 아니지만 단일 이벤트 루프에서 동기 접근만 하므로 안전.
+_cache: TTLCache[str, RdapInfo | None] = TTLCache(
+    maxsize=settings.rdap_cache_max_entries,
+    ttl=settings.rdap_cache_ttl_seconds,
+)
 
 # 동시 요청 합치기용 — 같은 도메인 요청이 겹치면 하나의 Future만 실제로 fetch
 _inflight: dict[str, asyncio.Future[tuple[RdapInfo | None, str | None]]] = {}
@@ -135,25 +140,22 @@ async def _fetch_rdap(domain: str) -> tuple[RdapInfo | None, str | None]:
         )
         return None, "parse_error"
 
-    _cache[domain] = (result, time.monotonic() + settings.rdap_cache_ttl_seconds)
+    _cache[domain] = result
     return result, None
 
 
 async def lookup_rdap(url: str) -> tuple[RdapInfo | None, str | None]:
     """(RdapInfo | None, error_code | None) 반환. 에러 시 파이프라인 중단하지 않음."""
-    ext = tldextract.extract(url)
+    ext = extract_url_parts(url)
     domain = ext.top_domain_under_public_suffix
     if not domain:
         return None, "no_domain"
 
-    now = time.monotonic()
-    cached = _cache.get(domain)
-    if cached is not None:
-        info, expire_at = cached
-        if now < expire_at:
-            return info, None
-        # 만료 엔트리는 즉시 제거 — 무작위 도메인 트래픽으로 dict 무한 성장 방지
-        _cache.pop(domain, None)
+    # TTLCache 가 만료된 엔트리는 자동으로 KeyError 처리 — 명시적 만료 체크 불필요.
+    try:
+        return _cache[domain], None
+    except KeyError:
+        pass
 
     # 같은 도메인 in-flight 요청이 있으면 결과 공유 — RDAP 서버 부하 방지
     existing = _inflight.get(domain)

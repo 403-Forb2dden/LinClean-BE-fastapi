@@ -39,6 +39,8 @@ def _build_prompt_context(
         image_alts=tuple(features.image_alts),
         external_link_ratio=features.external_link_ratio,
         is_spa_shell=features.is_spa_shell,
+        has_password_form_external_action=features.has_password_form_external_action,
+        has_external_meta_refresh=features.has_external_meta_refresh,
         upstream_signals=upstream_signals,
     )
 
@@ -54,9 +56,10 @@ def _ai_score_weight(verdict: AIVerdict) -> int:
 
 # 정상 컨텐츠(이미지·PDF·대용량 정적 페이지) 또는 파이프라인 정합성 이슈(unchainer 가 놓친 3xx)는
 # 악성 신호로 보지 않는다 — FETCH_FAILED 시그널만 남기고 점수는 가산하지 않는다.
+# blocked_host 는 우리가 SSRF 1·2선에서 차단한 결과지 페이지의 악성 신호가 아니라 동일하게 0 가산.
 # 그 외(timeout/connect_error/http_error 등)는 보수적으로 settings 의 가중치를 가산.
 _FETCH_ERROR_NO_SCORE: frozenset[str] = frozenset(
-    {"not_html", "too_large", "unexpected_redirect"}
+    {"not_html", "too_large", "unexpected_redirect", "blocked_host"}
 )
 
 
@@ -164,7 +167,9 @@ async def analyze_content(
         signals=list(scoring.signals),
         title=features.title,
         has_password_field=features.has_password_field,
+        has_password_form_external_action=features.has_password_form_external_action,
         has_meta_refresh=features.has_meta_refresh,
+        has_external_meta_refresh=features.has_external_meta_refresh,
         external_link_ratio=features.external_link_ratio,
         brand_impersonation=scoring.brand_impersonation,
         logo_alt_impersonation=scoring.logo_alt_impersonation,

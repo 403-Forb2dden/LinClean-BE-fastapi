@@ -80,7 +80,9 @@ def _build_user_prompt(ctx: AIPromptContext) -> str:
         "final_url": ctx.final_url,
         "title": ctx.title,
         "has_password_field": ctx.has_password_field,
+        "has_password_form_external_action": ctx.has_password_form_external_action,
         "has_meta_refresh": ctx.has_meta_refresh,
+        "has_external_meta_refresh": ctx.has_external_meta_refresh,
         "external_link_ratio": ctx.external_link_ratio,
         "spa_shell": ctx.is_spa_shell,
         # 과도하게 긴 alt 리스트는 비용만 늘리고 판정에 도움 안 됨

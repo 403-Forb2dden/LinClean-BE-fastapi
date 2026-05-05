@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from urllib.parse import urlparse
-
-import tldextract
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSignal
 from app.services.domain_heuristic.dga import check_dga
 from app.services.domain_heuristic.patterns import check_patterns
@@ -15,24 +15,31 @@ from app.services.domain_heuristic.typosquatting import check_typosquatting
 logger = get_logger(__name__)
 
 
-# 모듈 로드 시 1회 구성 — 호출당 dict 재생성 비용 제거. settings hot-reload는 사용하지 않는다.
-_SIGNAL_SCORES: dict[DomainHeuristicSignal, int] = {
-    DomainHeuristicSignal.IP_DIRECT: settings.score_weight_ip_direct,
-    DomainHeuristicSignal.TYPO_DOMAIN: settings.score_weight_typo_domain,
-    DomainHeuristicSignal.PUNYCODE_IDN: settings.score_weight_punycode_idn,
-    DomainHeuristicSignal.NEW_DOMAIN: settings.score_weight_new_domain,
-    DomainHeuristicSignal.SUBDOMAIN_OVERUSE: settings.score_weight_subdomain_overuse,
-    DomainHeuristicSignal.NO_HTTPS: settings.score_weight_no_https,
-    DomainHeuristicSignal.OPEN_REDIRECT_PARAM: settings.score_weight_open_redirect_param,
-    DomainHeuristicSignal.HYPHEN_OVERUSE: settings.score_weight_hyphen_overuse,
-    DomainHeuristicSignal.SUSPICIOUS_TLD: settings.score_weight_suspicious_tld,
-    DomainHeuristicSignal.DGA_LIKE: settings.score_weight_dga_like,
-    DomainHeuristicSignal.HOSTING_PLATFORM: settings.score_weight_hosting_platform,
-}
+@lru_cache(maxsize=1)
+def _signal_scores() -> dict[DomainHeuristicSignal, int]:
+    """시그널 → 점수 매핑을 lazy 하게 1회만 빌드.
+
+    예전엔 모듈 import 시점에 settings 값을 dict 로 캡처했는데, 그러면 테스트의
+    monkeypatch 와 운영의 env 갱신이 다른 모듈(signals.py 등 lazy 경로)과
+    비대칭적으로 반영됐다. 호출 단계에서 캐시된 dict 를 받도록 옮겨 일관성 확보.
+    """
+    return {
+        DomainHeuristicSignal.IP_DIRECT: settings.score_weight_ip_direct,
+        DomainHeuristicSignal.TYPO_DOMAIN: settings.score_weight_typo_domain,
+        DomainHeuristicSignal.PUNYCODE_IDN: settings.score_weight_punycode_idn,
+        DomainHeuristicSignal.NEW_DOMAIN: settings.score_weight_new_domain,
+        DomainHeuristicSignal.SUBDOMAIN_OVERUSE: settings.score_weight_subdomain_overuse,
+        DomainHeuristicSignal.NO_HTTPS: settings.score_weight_no_https,
+        DomainHeuristicSignal.OPEN_REDIRECT_PARAM: settings.score_weight_open_redirect_param,
+        DomainHeuristicSignal.HYPHEN_OVERUSE: settings.score_weight_hyphen_overuse,
+        DomainHeuristicSignal.SUSPICIOUS_TLD: settings.score_weight_suspicious_tld,
+        DomainHeuristicSignal.DGA_LIKE: settings.score_weight_dga_like,
+        DomainHeuristicSignal.HOSTING_PLATFORM: settings.score_weight_hosting_platform,
+    }
 
 
 async def check_domain_heuristic(url: str) -> DomainHeuristicResult:
-    ext = tldextract.extract(url)
+    ext = extract_url_parts(url)
     domain = ext.top_domain_under_public_suffix or (urlparse(url).hostname or "")
 
     signals: list[DomainHeuristicSignal] = []
@@ -70,7 +77,8 @@ async def check_domain_heuristic(url: str) -> DomainHeuristicResult:
             signals.append(DomainHeuristicSignal.NEW_DOMAIN)
 
     # 휴리스틱은 보조 시그널이라 합산이 GSB/URLhaus를 압도하지 않도록 캡 적용
-    raw_score = sum(_SIGNAL_SCORES.get(s, 0) for s in signals)
+    score_map = _signal_scores()
+    raw_score = sum(score_map.get(s, 0) for s in signals)
     score = min(raw_score, settings.domain_heuristic_score_cap)
 
     return DomainHeuristicResult(

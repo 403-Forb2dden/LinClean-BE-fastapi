@@ -3,9 +3,8 @@ from __future__ import annotations
 import ipaddress
 from urllib.parse import parse_qs, urlparse
 
-import tldextract
-
 from app.core.config import settings
+from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import DomainHeuristicSignal
 
 _SUSPICIOUS_TLDS = frozenset(
@@ -109,7 +108,7 @@ def check_patterns(url: str) -> list[DomainHeuristicSignal]:
     if parsed.scheme == "http":
         signals.append(DomainHeuristicSignal.NO_HTTPS)
 
-    ext = tldextract.extract(url)
+    ext = extract_url_parts(url)
 
     # 서브도메인 레이블 과다
     subdomain_labels = [s for s in ext.subdomain.split(".") if s]
