@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import httpx
 from cachetools import TTLCache  # type: ignore[import-untyped]
@@ -26,6 +28,9 @@ _inflight: dict[str, asyncio.Future[tuple[RdapInfo | None, str | None]]] = {}
 
 # 커넥션/TLS 재사용을 위해 모듈 레벨에서 싱글턴 사용
 _client: httpx.AsyncClient | None = None
+_rate_limit_until: float | None = None
+_DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
+_MAX_RATE_LIMIT_COOLDOWN_SECONDS = 120.0
 
 
 def _get_client() -> httpx.AsyncClient:
@@ -103,6 +108,46 @@ def _encode_for_url(domain: str) -> str | None:
         return None
 
 
+def _retry_after_seconds(value: str | None) -> float:
+    if not value:
+        return _DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
+
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return _DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        seconds = (retry_at.astimezone(UTC) - datetime.now(tz=UTC)).total_seconds()
+
+    return min(max(seconds, 0.0), _MAX_RATE_LIMIT_COOLDOWN_SECONDS)
+
+
+def _remember_rate_limit(domain: str, retry_after: str | None) -> None:
+    global _rate_limit_until
+    cooldown_seconds = _retry_after_seconds(retry_after)
+    _rate_limit_until = time.monotonic() + cooldown_seconds
+    logger.warning(
+        "rdap.rate_limited",
+        domain=domain,
+        retry_after=retry_after,
+        cooldown_seconds=cooldown_seconds,
+    )
+
+
+def _rate_limited_now() -> bool:
+    return _rate_limit_until is not None and time.monotonic() < _rate_limit_until
+
+
+def _rate_limit_remaining_seconds() -> float:
+    if _rate_limit_until is None:
+        return 0.0
+    return round(max(_rate_limit_until - time.monotonic(), 0.0), 3)
+
+
 async def _fetch_rdap(domain: str) -> tuple[RdapInfo | None, str | None]:
     encoded = _encode_for_url(domain)
     if encoded is None:
@@ -119,6 +164,9 @@ async def _fetch_rdap(domain: str) -> tuple[RdapInfo | None, str | None]:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return None, "not_found"
+        if exc.response.status_code == 429:
+            _remember_rate_limit(domain, exc.response.headers.get("retry-after"))
+            return None, "rate_limited"
         return None, "http_error"
     except Exception as exc:
         logger.warning(
@@ -150,6 +198,14 @@ async def lookup_rdap(url: str) -> tuple[RdapInfo | None, str | None]:
     domain = ext.top_domain_under_public_suffix
     if not domain:
         return None, "no_domain"
+
+    if _rate_limited_now():
+        logger.info(
+            "rdap.rate_limit_cooldown_active",
+            domain=domain,
+            remaining_seconds=_rate_limit_remaining_seconds(),
+        )
+        return None, "rate_limited"
 
     # TTLCache 가 만료된 엔트리는 자동으로 KeyError 처리 — 명시적 만료 체크 불필요.
     try:
