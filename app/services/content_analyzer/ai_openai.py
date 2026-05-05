@@ -13,15 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-
-from openai import AsyncOpenAI
-from openai.types.chat import (
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
-from openai.types.shared_params import ResponseFormatJSONSchema
-from openai.types.shared_params.response_format_json_schema import JSONSchema
+from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -30,7 +22,19 @@ from app.services.content_analyzer.ai import AIInference, AIPromptContext
 
 logger = get_logger(__name__)
 
-_VERDICT_SCHEMA: JSONSchema = {
+AsyncOpenAI: Any | None = None
+
+
+def _get_async_openai_class() -> Any:
+    global AsyncOpenAI
+    if AsyncOpenAI is None:
+        from openai import AsyncOpenAI as _AsyncOpenAI
+
+        AsyncOpenAI = _AsyncOpenAI
+    return AsyncOpenAI
+
+
+_VERDICT_SCHEMA: dict[str, Any] = {
     "name": "phishing_verdict",
     "strict": True,
     "schema": {
@@ -47,7 +51,7 @@ _VERDICT_SCHEMA: JSONSchema = {
     },
 }
 
-_RESPONSE_FORMAT: ResponseFormatJSONSchema = {
+_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": _VERDICT_SCHEMA,
 }
@@ -171,7 +175,7 @@ class OpenAIProvider:
             else settings.openai_max_output_tokens
         )
         # 클라이언트는 호출 시점에 지연 생성 — 키가 없으면 아예 만들지 않는다.
-        self._client: AsyncOpenAI | None = None
+        self._client: Any | None = None
         # aclose() 후 재사용 방지. 더블 콜은 no-op, 이후 infer() 는 None 반환.
         self._closed: bool = False
 
@@ -179,7 +183,7 @@ class OpenAIProvider:
     def model(self) -> str:
         return self._model
 
-    def _get_client(self) -> AsyncOpenAI | None:
+    def _get_client(self) -> Any | None:
         if self._closed:
             # 정상 시나리오에선 lifespan 종료 후 호출이 없어야 한다. 호출이 들리면
             # provider 재바인딩이 누락된 신호이므로 silent 폴백 대신 한 번 경고로 남긴다.
@@ -188,7 +192,8 @@ class OpenAIProvider:
         if not settings.openai_api_key:
             return None
         if self._client is None:
-            self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+            client_class = _get_async_openai_class()
+            self._client = client_class(api_key=settings.openai_api_key)
         return self._client
 
     async def aclose(self) -> None:
@@ -204,9 +209,9 @@ class OpenAIProvider:
         if client is None:
             return None
 
-        messages: list[ChatCompletionMessageParam] = [
-            ChatCompletionSystemMessageParam(role="system", content=_SYSTEM_PROMPT),
-            ChatCompletionUserMessageParam(role="user", content=_build_user_prompt(ctx)),
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": _build_user_prompt(ctx)},
         ]
         try:
             completion = await client.chat.completions.create(
