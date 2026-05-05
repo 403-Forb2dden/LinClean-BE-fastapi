@@ -33,7 +33,7 @@ def _success_payload(
     elapsed_ms: int,
     analyzed_at: datetime,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "analysisId": result.analysis_id,
         "requestId": request_id,
         "status": "succeeded",
@@ -46,6 +46,9 @@ def _success_payload(
         "analyzedAt": _iso_z(analyzed_at),
         "elapsedMs": elapsed_ms,
     }
+    if result.timings is not None:
+        payload["timings"] = result.timings.model_dump(mode="json")
+    return payload
 
 
 def _failure_payload(
@@ -55,7 +58,7 @@ def _failure_payload(
     elapsed_ms: int,
     analyzed_at: datetime,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "analysisId": result.analysis_id,
         "requestId": request_id,
         "status": "failed",
@@ -69,6 +72,9 @@ def _failure_payload(
         "analyzedAt": _iso_z(analyzed_at),
         "elapsedMs": elapsed_ms,
     }
+    if result.timings is not None:
+        payload["timings"] = result.timings.model_dump(mode="json")
+    return payload
 
 
 def build_analysis_callback_payload(
