@@ -16,6 +16,7 @@ from app.services.content_analyzer.ai import AIProvider, NullAIProvider, set_ai_
 from app.services.content_analyzer.ai_openai import OpenAIProvider
 from app.services.content_analyzer.fetch import aclose_client as aclose_fetch_client
 from app.services.domain_heuristic.rdap import aclose_client as aclose_rdap_client
+from app.services.unchainer.unchain import aclose_client as aclose_unchain_client
 
 logger = get_logger(__name__)
 
@@ -69,14 +70,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         provider=type(ai_provider).__name__,
         choice=settings.ai_provider,
     )
-    startup_task: asyncio.Task | None = None
+    startup_task: asyncio.Task[dict[str, int]] | None = None
     if settings.scheduler_enabled and settings.urlhaus_sync_on_startup:
         # 최초 부트 시 즉시 1회 동기화 (백그라운드, 앱 기동은 블로킹하지 않음).
         from app.services.threat_db.urlhaus_sync import sync_urlhaus
 
         startup_task = asyncio.create_task(sync_urlhaus())
 
-        def _log_startup_sync_result(t: asyncio.Task) -> None:
+        def _log_startup_sync_result(t: asyncio.Task[dict[str, int]]) -> None:
             # 백그라운드 task 의 예외가 사일런트하게 사라지지 않도록 로깅.
             if t.cancelled():
                 return
@@ -105,6 +106,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         shutdown_scheduler(wait=False)
         await aclose_rdap_client()
         await aclose_fetch_client()
+        await aclose_unchain_client()
         await _aclose_provider(ai_provider)
         await engine.dispose()
 
