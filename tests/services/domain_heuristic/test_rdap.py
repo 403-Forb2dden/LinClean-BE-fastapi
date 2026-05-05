@@ -93,8 +93,6 @@ async def test_lookup_rdap_success():
 
 @pytest.mark.asyncio
 async def test_lookup_rdap_cache_hit():
-    import time
-
     fake_info = RdapInfo(
         domain="cached.com",
         registrar="TestReg",
@@ -103,7 +101,8 @@ async def test_lookup_rdap_cache_hit():
         domain_age_days=None,
         is_new_domain=False,
     )
-    rdap_module._cache["cached.com"] = (fake_info, time.monotonic() + 3600)
+    # TTLCache 는 value 만 저장하고 만료는 내부 타이머가 관리.
+    rdap_module._cache["cached.com"] = fake_info
 
     # client 미설치 — 캐시 히트면 호출 자체가 없어야 함
     result, error = await lookup_rdap("https://cached.com/path")

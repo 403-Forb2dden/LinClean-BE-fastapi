@@ -12,7 +12,9 @@ def _features(**kwargs: object) -> ExtractedFeatures:
     base = {
         "title": None,
         "has_password_field": False,
+        "has_password_form_external_action": False,
         "has_meta_refresh": False,
+        "has_external_meta_refresh": False,
         "external_link_ratio": None,
         "image_alts": [],
     }
@@ -107,6 +109,27 @@ class TestMetaRefresh:
         result = score_content(features, final_url="https://x.test/")
         assert ContentSignal.META_REFRESH in result.signals
         assert result.score == settings.score_weight_meta_refresh
+
+    def test_external_meta_refresh_adds_stronger_signal(self) -> None:
+        features = _features(has_meta_refresh=True, has_external_meta_refresh=True)
+        result = score_content(features, final_url="https://x.test/")
+        assert ContentSignal.META_REFRESH in result.signals
+        assert ContentSignal.EXTERNAL_META_REFRESH in result.signals
+        assert result.score == (
+            settings.score_weight_meta_refresh
+            + settings.score_weight_external_meta_refresh
+        )
+
+
+class TestCredentialFormExternalAction:
+    def test_external_password_form_action_adds_score(self) -> None:
+        features = _features(
+            has_password_field=True,
+            has_password_form_external_action=True,
+        )
+        result = score_content(features, final_url="https://example.test/")
+        assert ContentSignal.CREDENTIAL_FORM_EXTERNAL in result.signals
+        assert result.score == settings.score_weight_credential_form_external
 
 
 class TestExternalLinkOveruse:

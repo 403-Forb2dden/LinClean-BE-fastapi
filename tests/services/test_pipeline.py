@@ -487,6 +487,51 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
 
 
 @pytest.mark.asyncio
+async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first(
+    async_session: AsyncSession,
+) -> None:
+    """heuristic 이 먼저 끝났더라도 threat malicious 면 heuristic 점수는 placeholder(0).
+
+    종전엔 task 종료 순서에 따라 heuristic 점수가 placeholder ↔ 실제 점수로 갈려
+    동일 입력에 응답 score 가 비결정적이었다. 두 분기 모두 placeholder 로 통일하는
+    회귀를 박는다 — verdict 는 DANGER 강제라 사용자 영향이 없지만 옵저버빌리티 보호.
+    """
+    final_url = "https://heur-fast-threat-mal.test/"
+
+    async def slow_threat(_session: AsyncSession, _url: str) -> ThreatDbResult:
+        # heuristic 보다 늦게 끝나도록 인위적 지연 — wait FIRST_COMPLETED 분기를 강제.
+        await asyncio.sleep(0.05)
+        return _malicious_threat(final_url)
+
+    async def fast_heuristic(_url: str) -> DomainHeuristicResult:
+        # heuristic 이 먼저 끝남 — 실제 점수가 있는 결과를 반환
+        return _heuristic_with_score(40)
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", side_effect=slow_threat),
+        patch("app.services.pipeline.check_domain_heuristic", side_effect=fast_heuristic),
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(
+            original_url=final_url, normalized_url=final_url
+        )
+        mock_unchain.return_value = _make_unchain(final_url)
+
+        result = await run_pipeline("aid-race", final_url, async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    # heuristic 이 실제 점수(40) 를 가졌어도 placeholder 로 갈아치워져야 한다.
+    assert result.stages.domain_heuristic.score == 0
+    assert result.stages.domain_heuristic.rdap_error == "skipped_threat_matched"
+    # GSB(+50) + heuristic placeholder(0) + content skip(0) = 50, verdict 는 DANGER 강제.
+    assert result.score == 50
+    assert result.verdict == Verdict.DANGER
+    mock_content.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_run_pipeline_short_circuits_on_urlhaus_match(
     async_session: AsyncSession,
 ) -> None:

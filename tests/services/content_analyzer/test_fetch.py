@@ -159,7 +159,8 @@ async def test_fetch_rejects_non_html_content_type() -> None:
     assert result.error == "not_html"
 
 
-async def test_fetch_accepts_xhtml() -> None:
+async def test_fetch_rejects_xhtml() -> None:
+    """application/xhtml+xml 은 XXE 회색지대라 본 분석에서는 입력 단에서 잘라낸다."""
     resp = _make_stream_response(
         200,
         headers={"content-type": "application/xhtml+xml"},
@@ -167,7 +168,8 @@ async def test_fetch_accepts_xhtml() -> None:
     )
     with _patch_client(send_return=resp):
         result = await fetch_page("https://example.test/")
-    assert result.ok is True
+    assert result.ok is False
+    assert result.error == "not_html"
 
 
 async def test_fetch_sets_user_agent_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,24 +235,45 @@ async def test_fetch_no_follow_redirects_config() -> None:
         kwargs = client_class.call_args.kwargs
         assert kwargs.get("follow_redirects") is False
         assert kwargs.get("verify") is True
+        assert kwargs.get("trust_env") is False
+
+
+def test_fetch_client_uses_configured_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """운영 egress 프록시를 설정하면 분석 fetch 가 그 경로를 사용해야 한다."""
+    monkeypatch.setattr(settings, "content_fetch_proxy_url", "http://proxy.local:8080")
+    with patch("app.services.content_analyzer.fetch.httpx.AsyncClient") as client_class:
+        fetch_module._build_client()
+        kwargs = client_class.call_args.kwargs
+        assert kwargs.get("proxy") == "http://proxy.local:8080"
 
 
 class TestSingletonClient:
     async def test_get_client_reuses_instance(self) -> None:
         """동일 프로세스 안에서 _get_client 는 같은 인스턴스를 돌려줘야 한다 — 풀 재사용 핵심."""
-        c1 = fetch_module._get_client()
-        c2 = fetch_module._get_client()
-        assert c1 is c2
-        await fetch_module.aclose_client()
+        client = AsyncMock()
+        client.aclose = AsyncMock()
+        with patch("app.services.content_analyzer.fetch._build_client", return_value=client):
+            c1 = fetch_module._get_client()
+            c2 = fetch_module._get_client()
+            assert c1 is c2
+            await fetch_module.aclose_client()
 
     async def test_aclose_client_resets_singleton(self) -> None:
         """aclose 후 _get_client 는 새 인스턴스를 만든다 — lifespan 재시작 시나리오 보호."""
-        c1 = fetch_module._get_client()
-        await fetch_module.aclose_client()
-        assert fetch_module._client is None
-        c2 = fetch_module._get_client()
-        assert c2 is not c1
-        await fetch_module.aclose_client()
+        client1 = AsyncMock()
+        client1.aclose = AsyncMock()
+        client2 = AsyncMock()
+        client2.aclose = AsyncMock()
+        with patch(
+            "app.services.content_analyzer.fetch._build_client",
+            side_effect=[client1, client2],
+        ):
+            c1 = fetch_module._get_client()
+            await fetch_module.aclose_client()
+            assert fetch_module._client is None
+            c2 = fetch_module._get_client()
+            assert c2 is not c1
+            await fetch_module.aclose_client()
 
     async def test_aclose_client_idempotent(self) -> None:
         await fetch_module.aclose_client()

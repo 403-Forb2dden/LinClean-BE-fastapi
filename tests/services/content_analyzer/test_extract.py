@@ -39,6 +39,29 @@ class TestPasswordField:
         features = extract_features(html, base_url="https://x.test/")
         assert features.has_password_field is True
 
+    def test_password_field_after_node_cap_still_detected(self) -> None:
+        """고위험 password 탐지는 일반 노드 순회 상한으로 우회되면 안 된다."""
+        padding = "".join('<input type="text">' for _ in range(1500))
+        html = f"{padding}<input type='password' name='pw'>"
+        features = extract_features(html, base_url="https://x.test/")
+        assert features.has_password_field is True
+
+
+class TestCredentialFormAction:
+    def test_password_form_external_action_detected(self) -> None:
+        html = (
+            '<form action="https://collector.test/login">'
+            '<input type="password" name="pw">'
+            "</form>"
+        )
+        features = extract_features(html, base_url="https://example.test/login")
+        assert features.has_password_form_external_action is True
+
+    def test_password_form_same_site_action_not_external(self) -> None:
+        html = '<form action="/login"><input type="password"></form>'
+        features = extract_features(html, base_url="https://example.test/")
+        assert features.has_password_form_external_action is False
+
 
 class TestMetaRefresh:
     def test_has_meta_refresh(self) -> None:
@@ -55,6 +78,18 @@ class TestMetaRefresh:
         html = '<meta HTTP-EQUIV="Refresh" content="5">'
         features = extract_features(html, base_url="https://x.test/")
         assert features.has_meta_refresh is True
+
+    def test_external_meta_refresh_target_detected(self) -> None:
+        html = '<meta http-equiv="refresh" content="0; url=https://evil.test/login">'
+        features = extract_features(html, base_url="https://example.test/")
+        assert features.has_meta_refresh is True
+        assert features.has_external_meta_refresh is True
+
+    def test_same_site_meta_refresh_target_not_external(self) -> None:
+        html = '<meta http-equiv="refresh" content="0; url=/next">'
+        features = extract_features(html, base_url="https://example.test/")
+        assert features.has_meta_refresh is True
+        assert features.has_external_meta_refresh is False
 
 
 class TestImageAlts:
@@ -187,7 +222,9 @@ class TestInvalidHtml:
         features = extract_features("", base_url="https://x.test/")
         assert features.title is None
         assert features.has_password_field is False
+        assert features.has_password_form_external_action is False
         assert features.has_meta_refresh is False
+        assert features.has_external_meta_refresh is False
         assert features.external_link_ratio is None
         assert features.image_alts == []
 
