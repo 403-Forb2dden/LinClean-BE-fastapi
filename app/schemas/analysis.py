@@ -15,7 +15,9 @@ from app.schemas.pipeline import (
     PipelineResult,
     PipelineStage,
     PipelineStages,
+    PipelineStageTimings,
     PipelineSuccess,
+    PipelineTimings,
 )
 from app.schemas.threat_db import GSBMatch, GSBResult, ThreatDbResult, URLhausResult
 from app.schemas.unchain import HopRecord, UnchainResult
@@ -38,8 +40,10 @@ __all__ = [
     "PipelineFailure",
     "PipelineResult",
     "PipelineStage",
+    "PipelineStageTimings",
     "PipelineStages",
     "PipelineSuccess",
+    "PipelineTimings",
     "RdapInfo",
     "ThreatDbResult",
     "URLhausResult",
