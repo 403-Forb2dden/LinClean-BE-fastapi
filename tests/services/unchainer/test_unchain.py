@@ -69,11 +69,18 @@ _PATCH_TARGET = "app.services.unchainer.unchain.httpx.AsyncClient"
 
 @pytest.fixture(autouse=True)
 def _bypass_host_safety(monkeypatch):
-    """기본적으로 SSRF 검사를 우회 — SSRF 전용 테스트에서만 직접 패치."""
+    """기본적으로 SSRF 검사를 우회 — SSRF 전용 테스트에서만 직접 패치.
+
+    unchain 의 모듈 싱글턴 _client 도 매 테스트에서 None 으로 리셋해, 패치된
+    httpx.AsyncClient 가 새로 호출되어 mock client 가 _client 에 박히도록 보장한다.
+    """
+    from app.services.unchainer import unchain as unchain_module
+
     monkeypatch.setattr(
         "app.services.unchainer.unchain._check_host_safety",
         AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(unchain_module, "_client", None)
 
 
 class TestBasicChain:
@@ -476,6 +483,8 @@ class TestHopRecording:
     @pytest.mark.asyncio
     async def test_all_redirect_status_codes(self) -> None:
         """301, 302, 303, 307, 308 모두 리다이렉트로 처리."""
+        from app.services.unchainer import unchain as unchain_module
+
         for code in (301, 302, 303, 307, 308):
             responses = [
                 _make_response(code, {"location": "https://example.com/dest"}),
@@ -483,6 +492,8 @@ class TestHopRecording:
             ]
             client = _mock_client(responses)
 
+            # 모듈 싱글턴 — iteration 마다 None 으로 리셋해 새 mock client 가 박히도록.
+            unchain_module._client = None
             with patch(_PATCH_TARGET, return_value=client):
                 result = await unchain_url("https://example.com/src")
 

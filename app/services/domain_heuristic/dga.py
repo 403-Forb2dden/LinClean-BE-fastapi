@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import math
 
-import tldextract
-
 from app.core.config import settings
+from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import DomainHeuristicSignal
 
 _CONSONANTS = frozenset("bcdfghjklmnpqrstvwxyz")
@@ -32,7 +31,7 @@ def _consonant_ratio(s: str) -> float:
 
 
 def check_dga(url: str) -> DomainHeuristicSignal | None:
-    ext = tldextract.extract(url)
+    ext = extract_url_parts(url)
     label = ext.domain  # 등록 도메인 레이블
     if not label or len(label) < _MIN_DGA_LABEL_LEN:
         # 짧은 레이블은 엔트로피/자음 비율 통계가 불안정 → 스킵

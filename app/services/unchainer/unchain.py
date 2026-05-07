@@ -2,24 +2,59 @@
 
 정규화된 URL의 리다이렉트 체인을 끝까지 추적해서
 최종 목적지 URL과 경로상 의심 신호를 수집함.
+
+httpx.AsyncClient 는 모듈 레벨 싱글턴으로 재사용 — 매 요청마다 새 client 를 만들면
+TCP/TLS 핸드셰이크 비용을 매번 새로 치르고 connection pool 도 공유되지 않는다.
+RDAP / fetch 와 동일 패턴이며 lifespan 에서 aclose_client() 로 명시 종료한다.
 """
 
 from __future__ import annotations
 
 import asyncio
 import ipaddress
-import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from app.core.config import settings
+from app.core.dns_cache import resolve_host_addrs
 from app.schemas.analysis import HopRecord, UnchainResult
 
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
 
 # 리다이렉트 대상으로 허용하는 스킴 (javascript:, data: 등 차단)
 _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+
+
+# 모듈 레벨 싱글턴 — 첫 호출 때 lazy init, lifespan 에서 aclose.
+_client: httpx.AsyncClient | None = None
+
+
+def _build_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            settings.unchain_timeout_seconds,
+            connect=settings.unchain_connect_timeout_seconds,
+        ),
+        follow_redirects=False,
+        verify=True,
+        cookies=None,
+    )
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = _build_client()
+    return _client
+
+
+async def aclose_client() -> None:
+    """앱 셧다운 훅에서 호출. 테스트에서도 client 상태 초기화에 쓴다."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
 
 
 def _is_private_ip(ip_str: str) -> bool:
@@ -42,16 +77,10 @@ async def _check_host_safety(url: str) -> str | None:
     if not hostname:
         return "invalid_host"
 
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    loop = asyncio.get_running_loop()
-
     try:
-        addrinfo = await loop.getaddrinfo(
-            hostname,
-            port,
-            type=socket.SOCK_STREAM,
-        )
-    except socket.gaierror:
+        addrinfo = await resolve_host_addrs(hostname)
+    except OSError:
+        # gaierror 도 OSError 서브클래스. dns_cache 가 캐시하지 않은 실패만 여기로 올라옴.
         return "dns_failure"
 
     for _, _, _, _, sockaddr in addrinfo:
@@ -95,53 +124,45 @@ async def _unchain_url_inner(url: str) -> UnchainResult:
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(
-            settings.unchain_timeout_seconds,
-            connect=settings.unchain_connect_timeout_seconds,
-        ),
-        follow_redirects=False,
-        verify=True,
-        cookies=None,
-    ) as client:
-        for _ in range(settings.unchain_max_hops):
-            if current_url in visited:
-                signals.append("redirect_loop")
-                break
-            visited.add(current_url)
+    client = _get_client()
+    for _ in range(settings.unchain_max_hops):
+        if current_url in visited:
+            signals.append("redirect_loop")
+            break
+        visited.add(current_url)
 
-            # SSRF·DNS Rebinding 방어: 매 hop마다 목적지 IP 검증
-            safety_error = await _check_host_safety(current_url)
-            if safety_error is not None:
-                error = safety_error
-                if safety_error == "ssrf_blocked":
-                    signals.append("ssrf_blocked")
-                break
+        # SSRF·DNS Rebinding 방어: 매 hop마다 목적지 IP 검증
+        safety_error = await _check_host_safety(current_url)
+        if safety_error is not None:
+            error = safety_error
+            if safety_error == "ssrf_blocked":
+                signals.append("ssrf_blocked")
+            break
 
-            hop, next_url, hop_error = await _follow_one_hop(
-                client,
-                current_url,
-                headers,
-                signals,
-            )
+        hop, next_url, hop_error = await _follow_one_hop(
+            client,
+            current_url,
+            headers,
+            signals,
+        )
 
-            if hop is not None:
-                hops.append(hop)
+        if hop is not None:
+            hops.append(hop)
 
-            if hop_error is not None:
-                error = hop_error
-                if hop_error == "timeout":
-                    timed_out = True
-                break
+        if hop_error is not None:
+            error = hop_error
+            if hop_error == "timeout":
+                timed_out = True
+            break
 
-            # 리다이렉트가 아니면 체인 종료
-            if next_url is None:
-                break
+        # 리다이렉트가 아니면 체인 종료
+        if next_url is None:
+            break
 
-            current_url = next_url
-        else:
-            # max_hops 도달
-            signals.append("max_hops_reached")
+        current_url = next_url
+    else:
+        # max_hops 도달
+        signals.append("max_hops_reached")
 
     return UnchainResult(
         input_url=url,

@@ -29,9 +29,14 @@ class DomainHeuristicSignal(StrEnum):
     HOSTING_PLATFORM = "HOSTING_PLATFORM"
 
 
+class DomainHeuristicSkippedReason(StrEnum):
+    THREAT_MATCHED = "threat_matched"
+
+
 class DomainHeuristicResult(BaseModel):
     domain: str
     score: int
     signals: list[DomainHeuristicSignal]
     rdap: RdapInfo | None = None
     rdap_error: str | None = None
+    skipped_reason: DomainHeuristicSkippedReason | None = None

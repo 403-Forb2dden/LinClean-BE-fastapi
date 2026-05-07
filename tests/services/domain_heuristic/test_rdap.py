@@ -15,6 +15,7 @@ def _reset_rdap_state(monkeypatch: pytest.MonkeyPatch):
     """각 테스트에서 cache/inflight/client 싱글턴 상태 격리."""
     rdap_module._cache.clear()
     rdap_module._inflight.clear()
+    rdap_module._rate_limit_until = None
     monkeypatch.setattr(rdap_module, "_client", None)
 
 
@@ -93,8 +94,6 @@ async def test_lookup_rdap_success():
 
 @pytest.mark.asyncio
 async def test_lookup_rdap_cache_hit():
-    import time
-
     fake_info = RdapInfo(
         domain="cached.com",
         registrar="TestReg",
@@ -103,7 +102,8 @@ async def test_lookup_rdap_cache_hit():
         domain_age_days=None,
         is_new_domain=False,
     )
-    rdap_module._cache["cached.com"] = (fake_info, time.monotonic() + 3600)
+    # TTLCache 는 value 만 저장하고 만료는 내부 타이머가 관리.
+    rdap_module._cache["cached.com"] = fake_info
 
     # client 미설치 — 캐시 히트면 호출 자체가 없어야 함
     result, error = await lookup_rdap("https://cached.com/path")
@@ -150,6 +150,83 @@ async def test_lookup_rdap_http_error():
 
     assert result is None
     assert error == "http_error"
+
+
+@pytest.mark.asyncio
+async def test_lookup_rdap_rate_limited():
+    mock_response = MagicMock(status_code=429, headers={})
+    http_error = httpx.HTTPStatusError("rate limited", request=MagicMock(), response=mock_response)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=http_error)
+    _install_client(mock_client)
+
+    result, error = await lookup_rdap("https://example.com/")
+
+    assert result is None
+    assert error == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_lookup_rdap_logs_rate_limited(monkeypatch: pytest.MonkeyPatch):
+    mock_response = MagicMock(status_code=429, headers={})
+    http_error = httpx.HTTPStatusError("rate limited", request=MagicMock(), response=mock_response)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=http_error)
+    _install_client(mock_client)
+    mock_warning = MagicMock()
+    monkeypatch.setattr(rdap_module.logger, "warning", mock_warning)
+
+    await lookup_rdap("https://example.com/")
+
+    mock_warning.assert_any_call(
+        "rdap.rate_limited",
+        domain="example.com",
+        retry_after=None,
+        cooldown_seconds=30.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_lookup_rdap_rate_limit_retry_after_starts_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    now = 1000.0
+    monkeypatch.setattr(rdap_module.time, "monotonic", lambda: now)
+    mock_response = MagicMock(status_code=429, headers={"retry-after": "30"})
+    http_error = httpx.HTTPStatusError("rate limited", request=MagicMock(), response=mock_response)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=http_error)
+    _install_client(mock_client)
+
+    result, error = await lookup_rdap("https://example.com/")
+    assert result is None
+    assert error == "rate_limited"
+
+    result, error = await lookup_rdap("https://other-example.com/")
+    assert result is None
+    assert error == "rate_limited"
+    mock_client.get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lookup_rdap_logs_cooldown_skip(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(rdap_module.time, "monotonic", lambda: 1000.0)
+    rdap_module._rate_limit_until = 1030.0
+    mock_info = MagicMock()
+    monkeypatch.setattr(rdap_module.logger, "info", mock_info)
+    mock_client = AsyncMock()
+    _install_client(mock_client)
+
+    result, error = await lookup_rdap("https://example.com/")
+
+    assert result is None
+    assert error == "rate_limited"
+    mock_client.get.assert_not_awaited()
+    mock_info.assert_any_call(
+        "rdap.rate_limit_cooldown_active",
+        domain="example.com",
+        remaining_seconds=30.0,
+    )
 
 
 @pytest.mark.asyncio

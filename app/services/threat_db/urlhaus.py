@@ -5,6 +5,8 @@ URL 완전일치 → match_key(host_path/host) 조회 순.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,13 +27,13 @@ def _split_tags(tags: str | None) -> list[str]:
 
 def _to_result(
     entry: URLhausEntry,
-    match_type: str,
+    match_type: Literal["url", "host", "host_path"],
     matched_key: str,
 ) -> URLhausResult:
     return URLhausResult(
         checked=True,
         is_threat=True,
-        match_type=match_type,  # type: ignore[arg-type]
+        match_type=match_type,
         matched_key=matched_key,
         threat=entry.threat,
         tags=_split_tags(entry.tags),
@@ -63,7 +65,7 @@ async def check_urlhaus(session: AsyncSession, url: str) -> URLhausResult:
         for key in keys:
             hit = by_key.get(key)
             if hit is not None:
-                match_type = "host_path" if "/" in key else "host"
+                match_type: Literal["host", "host_path"] = "host_path" if "/" in key else "host"
                 return _to_result(hit, match_type, key)
 
         return URLhausResult(checked=True, is_threat=False)

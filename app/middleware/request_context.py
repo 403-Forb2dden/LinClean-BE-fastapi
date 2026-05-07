@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Awaitable, Callable
-from typing import Any
 
 import structlog
 from starlette.datastructures import MutableHeaders
@@ -31,6 +29,7 @@ class RequestContextMiddleware:
         headers = dict(scope.get("headers", []))
         raw_id = headers.get(REQUEST_ID_HEADER.lower().encode())
         request_id = raw_id.decode() if raw_id else str(uuid.uuid4())
+        scope["request_id"] = request_id
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(

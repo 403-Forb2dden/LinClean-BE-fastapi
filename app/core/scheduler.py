@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 
 logger = get_logger(__name__)
 
@@ -14,6 +16,8 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 def get_scheduler() -> AsyncIOScheduler:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
@@ -30,6 +34,8 @@ def start_scheduler() -> None:
         return
 
     # import 시점에 순환 참조 방지차 지연 로드.
+    from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
+
     from app.services.threat_db.urlhaus_sync import sync_urlhaus
 
     scheduler = get_scheduler()
