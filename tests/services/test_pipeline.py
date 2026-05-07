@@ -499,7 +499,8 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
     # heuristic placeholder 가 채워져 스키마 유지 — domain 은 registrable domain
     heur = result.stages.domain_heuristic
     assert heur.score == 0
-    assert heur.rdap_error == "skipped_threat_matched"
+    assert heur.rdap_error is None
+    assert heur.skipped_reason == "threat_matched"
     assert heur.domain == "example.com"
 
 
@@ -541,7 +542,8 @@ async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first
     assert isinstance(result, PipelineSuccess)
     # heuristic 이 실제 점수(40) 를 가졌어도 placeholder 로 갈아치워져야 한다.
     assert result.stages.domain_heuristic.score == 0
-    assert result.stages.domain_heuristic.rdap_error == "skipped_threat_matched"
+    assert result.stages.domain_heuristic.rdap_error is None
+    assert result.stages.domain_heuristic.skipped_reason == "threat_matched"
     # GSB(+50) + heuristic placeholder(0) + content skip(0) = 50, verdict 는 DANGER 강제.
     assert result.score == 50
     assert result.verdict == Verdict.DANGER

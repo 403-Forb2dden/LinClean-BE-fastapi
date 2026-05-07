@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.exceptions import NormalizationError
 from app.core.tld import extract_url_parts
 from app.schemas.content_analysis import ContentAnalysisResult
-from app.schemas.domain_heuristic import DomainHeuristicResult
+from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSkippedReason
 from app.schemas.normalize import NormalizeResult
 from app.schemas.pipeline import (
     PipelineFailure,
@@ -185,8 +185,8 @@ def _decide_verdict(score: int, threat: ThreatDbResult) -> Verdict:
 def _skipped_heuristic(final_url: str) -> DomainHeuristicResult:
     """threat match 로 조기 종료된 경우 heuristic 자리에 들어갈 placeholder.
 
-    score=0 이라 합산에 영향 없고, rdap_error 코드로 "우리가 건너뛴 것" 을 식별 가능하게 남긴다.
-    응답 스키마의 heuristic 필드가 필수라서 빈 객체라도 채워야 하는 제약 때문.
+    score=0 이라 합산에 영향 없고, skipped_reason 으로 "우리가 건너뛴 것" 을 식별 가능하게
+    남긴다. 응답 스키마의 heuristic 필드가 필수라서 빈 객체라도 채워야 하는 제약 때문.
 
     domain 값은 정상 경로(check_domain_heuristic)와 동일하게 등록 가능 도메인을 쓴다.
     full host 를 쓰면 같은 필드에 의미가 두 가지로 갈리고, 다운스트림에서
@@ -199,7 +199,8 @@ def _skipped_heuristic(final_url: str) -> DomainHeuristicResult:
         score=0,
         signals=[],
         rdap=None,
-        rdap_error="skipped_threat_matched",
+        rdap_error=None,
+        skipped_reason=DomainHeuristicSkippedReason.THREAT_MATCHED,
     )
 
 
@@ -330,7 +331,7 @@ async def run_pipeline(
             _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
         else:
             upstream = _collect_upstream_signals(threat, heuristic)
-            content: ContentAnalysisResult = await _timed_async_stage(
+            content = await _timed_async_stage(
                 stage_timings,
                 PipelineStage.CONTENT_ANALYSIS,
                 _stage_content_analysis(log, unchain.final_url, upstream),
