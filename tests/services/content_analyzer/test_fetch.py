@@ -61,6 +61,16 @@ def _patch_client(send_return: object | None = None, *, send_side_effect: object
     )
 
 
+def test_nat64_global_reserved_ip_is_allowed() -> None:
+    """DNS64/NAT64(64:ff9b::/96)는 reserved=True 지만 외부 도달 가능한 global 주소다."""
+    assert fetch_module._is_blocked_ip_literal("64:ff9b::7935:df27") is False
+
+
+def test_multicast_ip_is_blocked() -> None:
+    """is_global=True 인 multicast 는 SSRF 대상이 아니므로 명시적으로 차단한다."""
+    assert fetch_module._is_blocked_ip_literal("224.0.0.1") is True
+
+
 async def test_fetch_success_returns_html() -> None:
     body = b"<html><head><title>X</title></head><body>hi</body></html>"
     resp = _make_stream_response(200, body=body)

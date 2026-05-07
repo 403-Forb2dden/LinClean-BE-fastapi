@@ -129,14 +129,9 @@ def _is_blocked_ip_literal(host: str) -> bool:
         ip_obj = ipaddress.ip_address(host)
     except ValueError:
         return False
-    return (
-        ip_obj.is_private
-        or ip_obj.is_loopback
-        or ip_obj.is_link_local
-        or ip_obj.is_reserved
-        or ip_obj.is_multicast
-        or ip_obj.is_unspecified
-    )
+    # is_reserved 는 DNS64/NAT64(64:ff9b::/96)처럼 공개 도달 가능한 대역도 True 로
+    # 표시한다. 외부 접근 가능성은 is_global 을 기준으로 보고, multicast 는 별도 차단한다.
+    return not ip_obj.is_global or ip_obj.is_multicast
 
 
 def _is_blocked_host(host: str | None) -> bool:
