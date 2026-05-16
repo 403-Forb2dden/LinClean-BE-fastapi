@@ -1,0 +1,19 @@
+id: mju-sso-login
+name: "명지대학교 통합로그인 SSO"
+source_url: "https://sso.mju.ac.kr/sso/auth?response_type=code&client_id=lms&state=Random%20String&redirect_uri=https://lms.mju.ac.kr/ilos/sso/sso_response.jsp"
+generated_by: "ai-website-cloner-template"
+fixture_type: "static-next-clone"
+category: "legitimate-login-page"
+purpose: "false-positive-regression"
+stores_credentials: false
+external_requests: false
+authentication_enabled: false
+search_indexing_disabled: true
+created_at: "2026-05-15"
+safety_controls:
+  - "Login button uses type=button and does not submit credentials."
+  - "No live SSO POST action is configured."
+  - "Account recovery, privacy, remote support, and guide links are disabled anchors."
+  - "robots.txt disallows all crawlers."
+  - "Next metadata sets noindex,nofollow."
+  - "Hidden test marker warns not to use real credentials."

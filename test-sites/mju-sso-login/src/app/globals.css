@@ -1,0 +1,440 @@
+@import "tailwindcss";
+
+:root {
+  --mju-blue: #022964;
+  --mju-link-blue: #078ad3;
+  --mju-border: #e2e2e2;
+  --mju-text: #333333;
+  --mju-muted: #999999;
+}
+
+* {
+  box-sizing: border-box;
+  word-break: keep-all;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 10px;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--mju-text);
+  font-family: var(--font-noto-sans-kr), "Noto Sans KR", sans-serif;
+  font-size: 1.8rem;
+  font-weight: 300;
+  line-height: 1.4;
+  background-image: url("/images/mju-bg-login.jpg");
+  background-repeat: round;
+  background-size: cover;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+li {
+  list-style: none;
+}
+
+img {
+  width: 100%;
+  height: auto;
+}
+
+.mju-sso-page {
+  width: 100%;
+  min-height: 100vh;
+  background-color: rgb(255 255 255 / 30%);
+}
+
+.login-box {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 51rem;
+  padding: 0 4rem;
+  transform: translate(-50%, -50%);
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 10px 10px 0 rgb(0 0 0 / 15%);
+}
+
+.login-top {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2rem 0 0;
+}
+
+.logo {
+  display: block;
+  width: 20rem;
+}
+
+.login-top h1 {
+  margin: 1rem 0;
+  color: var(--mju-blue);
+  font-size: 2rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.login-top h1 span {
+  font: inherit;
+}
+
+.login-lan {
+  margin: 1.2rem 0;
+  border-bottom: 1px solid var(--mju-border);
+  text-align: center;
+}
+
+.login-lan li {
+  display: inline-block;
+}
+
+.login-lan a {
+  display: inline-block;
+  color: #cfcdcd;
+  cursor: pointer;
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.67;
+}
+
+.login-lan li:nth-child(2) a {
+  margin-left: 2.2rem;
+}
+
+.login-lan a.on {
+  position: relative;
+  padding: 0 1.9rem;
+  color: var(--mju-blue);
+}
+
+.login-lan a.on::after {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  display: block;
+  width: 6rem;
+  margin-left: -3rem;
+  border-bottom: 2px solid var(--mju-blue);
+  content: "";
+}
+
+.login-con.active {
+  display: block;
+}
+
+.id-pw-wrap {
+  display: flex;
+  justify-content: space-between;
+}
+
+.input-box {
+  width: calc(75% - 1rem);
+}
+
+.input-box input {
+  width: 100%;
+  padding: 1.3rem 1.5rem 1.4rem;
+  border: 1px solid #cccccc;
+  border-radius: 0.5rem;
+  background-color: #ffffff;
+  color: var(--mju-text);
+  font-size: 1.6rem;
+  font-weight: 300;
+}
+
+.input-box input:nth-child(2) {
+  margin-top: 1rem;
+}
+
+.input-box input::placeholder {
+  color: #cccccc;
+}
+
+.login-bt {
+  display: block;
+  width: 25%;
+  padding: 4.3rem 0;
+  border-radius: 0.5rem;
+  background: var(--mju-blue);
+  color: #ffffff;
+  cursor: default;
+  font-size: 2rem;
+  font-weight: 400;
+  text-align: center;
+}
+
+.keepid-box {
+  margin-top: 0.9rem;
+  color: var(--mju-text);
+  font-size: 1.4rem;
+}
+
+.keepid-box input {
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+.keepid-box label {
+  vertical-align: middle;
+}
+
+.capslock {
+  display: none;
+  float: right;
+  color: red;
+  font-weight: 700;
+}
+
+.set-id {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.set-id a {
+  color: var(--mju-text);
+  font-size: 1.6rem;
+}
+
+.set-id li:nth-child(n + 2)::before {
+  display: inline-block;
+  height: 1.4rem;
+  margin: 0 2.5rem;
+  border-left: 1px solid #c2c2c2;
+  vertical-align: middle;
+  content: "";
+}
+
+.notice {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #333333;
+  color: #f3f3f3;
+  font-size: 1.6rem;
+  line-height: 1.8;
+}
+
+.notice-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dot-list h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.dot-list .info::before {
+  display: inline-block;
+  width: 3.1rem;
+  height: 3.1rem;
+  margin-right: 1.2rem;
+  background: url("/images/mju-ico-info.png") no-repeat 0 0 / 3.1rem;
+  vertical-align: middle;
+  content: "";
+}
+
+.dot-list li {
+  position: relative;
+  padding-left: 4.5rem;
+}
+
+.dot-list li::before {
+  display: inline-block;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 1.2rem;
+  margin-left: -2.3rem;
+  background: url("/images/mju-ico-dot.png") no-repeat 0 0 / 1.1rem;
+  content: "";
+}
+
+.pdf-guide {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  font-size: 1.6rem;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.service {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-right: -4rem;
+  margin-left: -4rem;
+  padding: 1rem 0 1.1rem;
+  border-radius: 0 0 1rem 1rem;
+  background: #e7e7e7;
+}
+
+.service a {
+  color: var(--mju-muted);
+  font-size: 1.4rem;
+}
+
+.service li:nth-child(1) a {
+  padding: 0 1rem;
+  border-radius: 3px;
+  background-color: var(--mju-link-blue);
+  color: #ffffff;
+}
+
+.service li:nth-child(1)::after {
+  display: inline-block;
+  height: 1.4rem;
+  margin: 0 2.2rem;
+  border-right: 1px solid #c2c2c2;
+  vertical-align: middle;
+  content: "";
+}
+
+.fixture-safety-note {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 768px) {
+  body {
+    background: #ffffff;
+  }
+
+  .mju-sso-page {
+    background: #ffffff;
+  }
+
+  .login-box {
+    top: 0;
+    left: 50%;
+    width: 100%;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 0 2rem;
+    transform: translate(-50%, 0);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .login-top {
+    flex-direction: column;
+  }
+
+  .logo {
+    width: 17.5rem;
+    padding-top: 3rem;
+  }
+
+  .login-lan {
+    margin-top: 1.4rem;
+  }
+
+  .login-lan a {
+    font-size: 1.4rem;
+  }
+
+  .login-lan li:nth-child(2) a {
+    margin-left: 1.4rem;
+  }
+
+  .id-pw-wrap {
+    flex-direction: column;
+  }
+
+  .input-box {
+    width: 100%;
+  }
+
+  .input-box input {
+    padding: 0.9rem 1.6rem;
+    border-radius: 0;
+    font-size: 1.4rem;
+  }
+
+  .login-bt {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 1.4rem 0;
+    border-radius: 0;
+    font-size: 1.6rem;
+  }
+
+  .keepid-box {
+    margin-top: 1.1rem;
+    font-size: 1.4rem;
+  }
+
+  .set-id a {
+    font-size: 1.4rem;
+  }
+
+  .set-id li:nth-child(n + 2)::before {
+    height: 0.7rem;
+    margin: 0 1.6rem;
+  }
+
+  .notice {
+    margin-top: 1.5rem;
+    padding: 1.2rem 1rem;
+    font-size: 1.4rem;
+  }
+
+  .notice-heading {
+    align-items: flex-start;
+    gap: 0.8rem;
+  }
+
+  .pdf-guide {
+    padding-right: 0;
+    font-size: 1.4rem;
+    text-align: right;
+  }
+
+  .service {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    margin-right: 0;
+    margin-left: 0;
+    padding: 0.7rem 0 1.2rem;
+    border-radius: 0;
+  }
+
+  .service a {
+    font-size: 1.2rem;
+  }
+
+  .service li:nth-child(1)::after {
+    height: 0.7rem;
+    margin: 0 2rem;
+  }
+}

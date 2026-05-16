@@ -1,0 +1,11 @@
+- id: mju-sso-login
+  name: "명지대학교 통합로그인 SSO 클론"
+  source_url: "https://sso.mju.ac.kr/sso/auth?response_type=code&client_id=lms&state=Random%20String&redirect_uri=https://lms.mju.ac.kr/ilos/sso/sso_response.jsp"
+  url_env: "TEST_SITE_MJU_SSO_LOGIN_URL"
+  fixture_path: "test-sites/mju-sso-login"
+  category: "legitimate-login-page"
+  purpose: "false-positive-regression"
+  expected_verdict: "safe"
+  notes:
+    - "Static test fixture with authentication disabled."
+    - "Use deployed URL via TEST_SITE_MJU_SSO_LOGIN_URL for end-to-end engine tests."
