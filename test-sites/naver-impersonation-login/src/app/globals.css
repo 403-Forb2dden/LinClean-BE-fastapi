@@ -198,6 +198,7 @@ h6 {
 .container,
 .content {
   width: 100%;
+  max-width: none;
 }
 
 .content {
