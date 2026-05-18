@@ -9,3 +9,94 @@
   notes:
     - "Static test fixture with authentication disabled."
     - "Use deployed URL via TEST_SITE_MJU_SSO_LOGIN_URL for end-to-end engine tests."
+
+- id: redirect-chain-single-safe
+  name: "단일 리다이렉트 후 정상 최종 페이지"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/1"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "unchainer-regression"
+  expected_verdict: "safe"
+  expected_unchain:
+    final_path: "/final/safe"
+    signals_absent:
+      - "max_hops_reached"
+      - "unsafe_scheme"
+      - "redirect_loop"
+  notes:
+    - "TEST_SITE_REDIRECT_CHAIN_URL과 path를 결합해 테스트 URL을 만든다."
+    - "각 redirect 응답은 0.5초 지연 후 반환된다."
+
+- id: redirect-chain-multi-hop-safe
+  name: "다중 hop 리다이렉트 후 정상 최종 페이지"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/3"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "unchainer-regression"
+  expected_verdict: "safe"
+  expected_unchain:
+    final_path: "/final/safe"
+    required_intermediate_paths:
+      - "/hop/1"
+      - "/hop/2"
+    signals_absent:
+      - "max_hops_reached"
+      - "unsafe_scheme"
+      - "redirect_loop"
+
+- id: redirect-chain-external
+  name: "외부 테스트 도메인으로 이동하는 리다이렉트"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/external"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "cross-origin-regression"
+  expected_verdict: "safe"
+  expected_unchain:
+    final_url: "https://example.com/"
+    signals_present:
+      - "cross_origin"
+  notes:
+    - "실제 악성 도메인이 아닌 example.com만 사용한다."
+
+- id: redirect-chain-unsafe-scheme
+  name: "비허용 scheme 리다이렉트 차단"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/unsafe-scheme"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "unsafe-scheme-regression"
+  expected_verdict: "warning"
+  expected_unchain:
+    error: "unsafe_redirect_scheme:javascript"
+    signals_present:
+      - "unsafe_scheme:javascript"
+
+- id: redirect-chain-max-hop
+  name: "최대 hop 수 초과 리다이렉트"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/max-hop"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "max-hop-regression"
+  expected_verdict: "warning"
+  expected_unchain:
+    signals_present:
+      - "max_hops_reached"
+    default_max_hops: 5
+
+- id: redirect-chain-to-suspicious
+  name: "리다이렉트 후 의심 최종 페이지"
+  url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
+  path: "/redirect/to-suspicious"
+  fixture_path: "test-sites/redirect-chain"
+  category: "redirect-chain"
+  purpose: "final-page-classification-regression"
+  expected_verdict: "warning"
+  expected_unchain:
+    final_path: "/final/suspicious"
+  notes:
+    - "최종 페이지는 의심 문구와 비활성 카드 인증 폼을 포함한다."
+    - "카드번호, CVC, 만료일, 카드 비밀번호 앞 2자리 입력 UI는 readOnly이며 실제 수집이나 다운로드가 없다."
