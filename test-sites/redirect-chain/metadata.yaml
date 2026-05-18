@@ -1,0 +1,17 @@
+id: redirect-chain
+name: "리다이렉트 체인 테스트 Fixture"
+fixture_type: "next-route-handler-fixture"
+category: "redirect-chain"
+purpose: "unchainer-regression"
+stores_credentials: false
+external_requests: false
+authentication_enabled: false
+search_indexing_disabled: true
+created_at: "2026-05-18"
+safety_controls:
+  - "각 경로는 고정된 HTTP 리다이렉트 응답 또는 비활성 최종 페이지만 반환한다."
+  - "외부 리다이렉트는 실제 악성 도메인이 아닌 example.com만 사용한다."
+  - "비허용 스킴 리다이렉트는 엔진 차단 검증용 Location 헤더로만 반환한다."
+  - "카드 인증 테스트 폼은 readOnly 입력과 비활성 버튼만 사용하며 name 속성을 두지 않는다."
+  - "파일 다운로드, 인증 정보 수집, 부작용이 있는 스크립트, 데이터 유출 동작을 구현하지 않는다."
+  - "robots.txt와 metadata로 검색 인덱싱을 차단한다."
