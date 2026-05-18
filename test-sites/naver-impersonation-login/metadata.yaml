@@ -15,12 +15,13 @@ expected_signals:
   - "LOGO_ALT_IMPERSONATION"
   - "CREDENTIAL_FORM_EXTERNAL"
 source_and_asset_notes:
-  - "Visual structure references the public NAVER login page."
-  - "Local NAVER wordmark SVG is used only as a security test fixture asset."
+  - "Visual structure references the public NAVER login page HTML fetched from nid.naver.com."
+  - "Local NAVER sprite assets are copied from public ssl.pstatic.net static login sprites for fixture-only visual parity."
+  - "Local NAVER wordmark SVG is included only as hidden detector coverage for image alt extraction."
   - "Logo alt text intentionally includes NAVER for detector coverage."
 safety_controls:
   - "Form action points to https://example.invalid/linclean-fixture/credential-sink."
-  - "Form submit is blocked with event.preventDefault()."
+  - "Primary login button is type=button and form submit is still blocked with event.preventDefault()."
   - "No live NAVER authentication endpoint is configured."
   - "All recovery, passkey, social login, footer, and language links are disabled anchors or non-submitting buttons."
   - "robots.txt disallows all crawlers."
