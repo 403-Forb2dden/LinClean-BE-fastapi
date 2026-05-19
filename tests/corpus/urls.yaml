@@ -10,6 +10,20 @@
     - "Static test fixture with authentication disabled."
     - "Use deployed URL via TEST_SITE_MJU_SSO_LOGIN_URL for end-to-end engine tests."
 
+- id: obituary-kakao-apk-download
+  name: "故 홍길동 카카오부고 APK 다운로드 유도"
+  source_url: "https://kakaobugo.com/m/691?mode=sample"
+  url_env: "TEST_SITE_OBITUARY_KAKAO_APK_DOWNLOAD_URL"
+  fixture_path: "test-sites/obituary-kakao-apk-download"
+  category: "social-engineering-apk-download"
+  purpose: "malicious-download-regression"
+  expected_verdict: "malicious"
+  notes:
+    - "Static KakaoBugo-style obituary fixture for 故 홍길동."
+    - "Condolence flower button opens a KakaoTalk-themed APK download prompt."
+    - "Downloaded .apk is a harmless text fixture, not an Android package."
+    - "Use deployed URL via TEST_SITE_OBITUARY_KAKAO_APK_DOWNLOAD_URL for end-to-end engine tests."
+
 - id: nhis-fuel-subsidy-check
   name: "고유가 피해지원금 대상 여부 조회 NHIS 사칭 폼"
   source_url: "https://www.nhis.or.kr/"
