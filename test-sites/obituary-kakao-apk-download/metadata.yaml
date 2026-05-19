@@ -1,0 +1,33 @@
+id: obituary-kakao-apk-download
+name: "故 홍길동 카카오부고 APK 다운로드 유도"
+source_url: "https://kakaobugo.com/m/691?mode=sample"
+reference_template: "https://github.com/JCodesMore/ai-website-cloner-template"
+generated_by: "ai-website-cloner-template"
+fixture_type: "static-next-clone"
+category: "social-engineering-apk-download"
+purpose: "malicious-download-regression"
+expected_verdict: "malicious"
+stores_credentials: false
+external_requests: false
+authentication_enabled: false
+actual_malware: false
+search_indexing_disabled: true
+created_at: "2026-05-19"
+download:
+  filename: "uptodown-com.kakao.talk.apk"
+  path: "public/downloads/uptodown-com.kakao.talk.apk"
+  content: "harmless text fixture with .apk extension"
+safety_controls:
+  - "Downloaded .apk file is a harmless text fixture, not an Android package."
+  - "No login, credential, PII, or payment collection is present."
+  - "Original flower shop POST, Kakao map, Kakao SDK, SMS, Band, and guestbook actions are disabled."
+  - "The condolence flower button opens a local KakaoTalk-themed modal before the local dummy download."
+  - "No live KakaoTalk, KakaoBugo, flower shop, funeral service, or messaging endpoint is requested."
+  - "robots.txt disallows all crawlers."
+  - "Next metadata sets noindex,nofollow."
+  - "Hidden test marker identifies the page as a LinClean security fixture."
+expected_signals:
+  - "KakaoBugo-style obituary page for 故 홍길동"
+  - "APK download with .apk extension"
+  - "KakaoTalk viewing prompt from condolence flower button before download"
+  - "download flow without credential phishing form"
