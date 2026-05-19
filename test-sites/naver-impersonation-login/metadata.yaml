@@ -1,0 +1,29 @@
+id: naver-impersonation-login
+name: "NAVER 사칭 로그인 폼"
+source_url: "https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com/"
+generated_by: "ai-website-cloner-template"
+fixture_type: "static-next-clone"
+category: "brand-impersonation-login-page"
+purpose: "true-positive-regression"
+stores_credentials: false
+external_requests: false
+authentication_enabled: false
+search_indexing_disabled: true
+created_at: "2026-05-18"
+expected_signals:
+  - "BRAND_IMPERSONATION_FORM"
+  - "LOGO_ALT_IMPERSONATION"
+  - "CREDENTIAL_FORM_EXTERNAL"
+source_and_asset_notes:
+  - "Visual structure references the public NAVER login page HTML fetched from nid.naver.com."
+  - "Local NAVER sprite assets are copied from public ssl.pstatic.net static login sprites for fixture-only visual parity."
+  - "Local NAVER wordmark SVG is included only as hidden detector coverage for image alt extraction."
+  - "Logo alt text intentionally includes NAVER for detector coverage."
+safety_controls:
+  - "Form action points to https://example.invalid/linclean-fixture/credential-sink."
+  - "Primary login button is type=button and form submit is still blocked with event.preventDefault()."
+  - "No live NAVER authentication endpoint is configured."
+  - "All recovery, passkey, social login, footer, and language links are disabled anchors or non-submitting buttons."
+  - "robots.txt disallows all crawlers."
+  - "Next metadata sets noindex,nofollow."
+  - "Visible test marker warns not to use real credentials."
