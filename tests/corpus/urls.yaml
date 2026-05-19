@@ -9,3 +9,16 @@
   notes:
     - "Static test fixture with authentication disabled."
     - "Use deployed URL via TEST_SITE_MJU_SSO_LOGIN_URL for end-to-end engine tests."
+
+- id: nhis-fuel-subsidy-check
+  name: "고유가 피해지원금 대상 여부 조회 NHIS 사칭 폼"
+  source_url: "https://www.nhis.or.kr/"
+  url_env: "TEST_SITE_NHIS_FUEL_SUBSIDY_CHECK_URL"
+  fixture_path: "test-sites/nhis-fuel-subsidy-check"
+  category: "public-agency-impersonation-pii-form"
+  purpose: "true-positive-regression"
+  expected_verdict: "phishing"
+  notes:
+    - "Static NHIS-style eligibility lookup fixture with PII submission disabled."
+    - "Contains name and resident registration number fields for detector regression coverage."
+    - "Use deployed URL via TEST_SITE_NHIS_FUEL_SUBSIDY_CHECK_URL for end-to-end engine tests."

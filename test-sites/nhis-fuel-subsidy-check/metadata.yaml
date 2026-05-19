@@ -1,0 +1,32 @@
+id: nhis-fuel-subsidy-check
+name: "고유가 피해지원금 대상 여부 조회 NHIS 사칭 폼"
+source_url: "https://www.nhis.or.kr/"
+generated_by: "ai-website-cloner-template"
+fixture_type: "static-next-clone"
+category: "public-agency-impersonation-pii-form"
+purpose: "true-positive-regression"
+stores_credentials: false
+stores_pii: false
+external_requests: false
+authentication_enabled: false
+search_indexing_disabled: true
+created_at: "2026-05-18"
+expected_verdict: "phishing"
+expected_signals:
+  - "PUBLIC_AGENCY_IMPERSONATION"
+  - "PII_COLLECTION_FORM"
+  - "RESIDENT_REGISTRATION_NUMBER_FIELD"
+  - "SUBSIDY_ELIGIBILITY_LURE"
+source_and_asset_notes:
+  - "Visual structure references the public NHIS website tone, blue-green palette, public-service navigation, and eligibility lookup language."
+  - "No NHIS production assets are hotlinked; the fixture is a static local Next.js page."
+  - "The form intentionally contains name and resident registration number fields for true-positive detector coverage."
+safety_controls:
+  - "Form action points to https://example.invalid/linclean-fixture/pii-sink."
+  - "Client submit handler calls event.preventDefault() and never transmits input."
+  - "Primary lookup button is a non-submitting button to avoid accidental submission."
+  - "No live NHIS service endpoint is configured."
+  - "All navigation, certificate, customer center, and policy links are disabled anchors."
+  - "robots.txt disallows all crawlers."
+  - "Next metadata sets noindex,nofollow."
+  - "Hidden test marker warns not to use real personal information."
