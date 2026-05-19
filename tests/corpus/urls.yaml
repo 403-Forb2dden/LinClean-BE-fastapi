@@ -10,6 +10,23 @@
     - "Static test fixture with authentication disabled."
     - "Use deployed URL via TEST_SITE_MJU_SSO_LOGIN_URL for end-to-end engine tests."
 
+- id: naver-impersonation-login
+  name: "NAVER 사칭 로그인 폼 클론"
+  source_url: "https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com/"
+  url_env: "TEST_SITE_NAVER_IMPERSONATION_LOGIN_URL"
+  fixture_path: "test-sites/naver-impersonation-login"
+  category: "brand-impersonation-login-page"
+  purpose: "true-positive-regression"
+  expected_verdict: "danger"
+  expected_signals:
+    - "BRAND_IMPERSONATION_FORM"
+    - "LOGO_ALT_IMPERSONATION"
+    - "CREDENTIAL_FORM_EXTERNAL"
+  notes:
+    - "Static NAVER-like login fixture with hidden non-visual test marker."
+    - "Credential form uses a dummy external action and client-side submit blocking."
+    - "Use deployed URL via TEST_SITE_NAVER_IMPERSONATION_LOGIN_URL for end-to-end engine tests."
+
 - id: redirect-chain-single-safe
   name: "단일 리다이렉트 후 정상 최종 페이지"
   url_env: "TEST_SITE_REDIRECT_CHAIN_URL"
