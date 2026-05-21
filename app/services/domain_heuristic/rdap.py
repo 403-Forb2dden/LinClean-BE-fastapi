@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 import httpx
-from cachetools import TTLCache  # type: ignore[import-untyped]
+from cachetools import TTLCache
 
 from app.core.config import settings
 from app.core.logging import get_logger
