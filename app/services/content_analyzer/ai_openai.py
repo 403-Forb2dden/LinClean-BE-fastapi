@@ -15,24 +15,14 @@ import asyncio
 import json
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.content_analysis import AIVerdict, TokenUsage
 from app.services.content_analyzer.ai import AIInference, AIPromptContext
 
 logger = get_logger(__name__)
-
-AsyncOpenAI: Any | None = None
-
-
-def _get_async_openai_class() -> Any:
-    global AsyncOpenAI
-    if AsyncOpenAI is None:
-        from openai import AsyncOpenAI as _AsyncOpenAI
-
-        AsyncOpenAI = _AsyncOpenAI
-    return AsyncOpenAI
-
 
 _VERDICT_SCHEMA: dict[str, Any] = {
     "name": "phishing_verdict",
@@ -73,7 +63,9 @@ _SYSTEM_PROMPT = (
     "'폼이 없다' 가 아니라 '정적 추출로는 판정 불가' 를 의미한다. 이 경우 남은 단서"
     "(title/URL/이미지 alt/upstream_signals 등)만으로 단정하지 말고 suspicious 또는 benign 을 "
     "보수적으로 선택한다. "
-    "verdict 는 phishing / suspicious / benign 중 하나. reason 은 한국어 1~2문장. "
+    "verdict 는 phishing / suspicious / benign 중 하나. reason 은 보안 전문가처럼 "
+    "근거 중심으로 쓰되, IT와 보안을 모르는 사람도 이해할 수 있는 쉬운 한국어 100자 이내 "
+    "1문장으로 작성한다. "
     "확증이 없으면 benign 또는 suspicious 를 쓰고 phishing 은 보수적으로만 사용한다."
 )
 
@@ -98,13 +90,21 @@ def _build_user_prompt(ctx: AIPromptContext) -> str:
 
 
 def _extract_token_usage(completion: object) -> TokenUsage | None:
-    # completion.usage 는 OpenAI SDK 가 채워주지만 스트리밍/에러 응답 등에선 비어있을 수 있다.
-    usage = getattr(completion, "usage", None)
+    # HTTP 응답 dict 또는 SDK 호환 객체를 모두 받는다. 스트리밍/에러 응답 등에선 비어있을 수 있다.
+    if isinstance(completion, dict):
+        usage = completion.get("usage")
+    else:
+        usage = getattr(completion, "usage", None)
     if usage is None:
         return None
-    prompt = getattr(usage, "prompt_tokens", None)
-    completion_tokens = getattr(usage, "completion_tokens", None)
-    total = getattr(usage, "total_tokens", None)
+    if isinstance(usage, dict):
+        prompt = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        total = usage.get("total_tokens")
+    else:
+        prompt = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        total = getattr(usage, "total_tokens", None)
     if prompt is None or completion_tokens is None or total is None:
         return None
     return TokenUsage(
@@ -132,6 +132,9 @@ def _parse_verdict(
     reason = data.get("reason")
     if not isinstance(verdict_str, str) or not isinstance(reason, str):
         return None
+    reason = reason.strip()
+    if len(reason) > 100:
+        reason = reason[:100]
 
     try:
         verdict = AIVerdict(verdict_str)
@@ -175,7 +178,7 @@ class OpenAIProvider:
             else settings.openai_max_output_tokens
         )
         # 클라이언트는 호출 시점에 지연 생성 — 키가 없으면 아예 만들지 않는다.
-        self._client: Any | None = None
+        self._client: httpx.AsyncClient | None = None
         # aclose() 후 재사용 방지. 더블 콜은 no-op, 이후 infer() 는 None 반환.
         self._closed: bool = False
 
@@ -183,7 +186,7 @@ class OpenAIProvider:
     def model(self) -> str:
         return self._model
 
-    def _get_client(self) -> Any | None:
+    def _get_client(self) -> httpx.AsyncClient | None:
         if self._closed:
             # 정상 시나리오에선 lifespan 종료 후 호출이 없어야 한다. 호출이 들리면
             # provider 재바인딩이 누락된 신호이므로 silent 폴백 대신 한 번 경고로 남긴다.
@@ -192,8 +195,15 @@ class OpenAIProvider:
         if not settings.openai_api_key:
             return None
         if self._client is None:
-            client_class = _get_async_openai_class()
-            self._client = client_class(api_key=settings.openai_api_key)
+            self._client = httpx.AsyncClient(
+                base_url="https://api.openai.com/v1",
+                timeout=self._timeout,
+                headers={
+                    "Authorization": f"Bearer {settings.openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                trust_env=False,
+            )
         return self._client
 
     async def aclose(self) -> None:
@@ -201,7 +211,7 @@ class OpenAIProvider:
             return
         self._closed = True
         if self._client is not None:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
 
     async def infer(self, ctx: AIPromptContext) -> AIInference | None:
@@ -213,15 +223,20 @@ class OpenAIProvider:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": _build_user_prompt(ctx)},
         ]
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "response_format": _RESPONSE_FORMAT,
+            "max_tokens": self._max_output_tokens,
+            "temperature": 0,
+        }
         try:
-            completion = await client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                response_format=_RESPONSE_FORMAT,
-                max_tokens=self._max_output_tokens,
-                temperature=0,
+            response = await asyncio.wait_for(
+                client.post("/chat/completions", json=payload),
                 timeout=self._timeout,
             )
+            response.raise_for_status()
+            completion = response.json()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -234,8 +249,8 @@ class OpenAIProvider:
             return None
 
         try:
-            raw = completion.choices[0].message.content
-        except (AttributeError, IndexError) as exc:
+            raw = completion["choices"][0]["message"]["content"]
+        except (KeyError, TypeError, IndexError) as exc:
             logger.warning("openai_ai.unexpected_shape", error=str(exc))
             return None
 

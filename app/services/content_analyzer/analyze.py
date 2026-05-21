@@ -8,7 +8,8 @@ asyncio.CancelledError 는 반드시 re-raise 해서 상위 shutdown/timeout 신
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+import inspect
+from collections.abc import Awaitable, Iterable
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -69,12 +70,38 @@ def _fetch_failed_score(error: str | None) -> int:
     return settings.score_weight_content_fetch_failed
 
 
+def _fetch_failed_reason(error: str | None) -> str:
+    if error == "http_error_404":
+        return "페이지를 찾을 수 없습니다."
+    if error and error.startswith("http_error_4"):
+        return "페이지 요청이 거부되었거나 찾을 수 없습니다."
+    if error and error.startswith("http_error_5"):
+        return "대상 서버 오류로 페이지를 확인할 수 없습니다."
+    if error == "timeout":
+        return "페이지 응답 시간이 초과되었습니다."
+    if error == "connect_error":
+        return "페이지에 연결할 수 없습니다."
+    if error == "dns_failure":
+        return "도메인 주소를 확인할 수 없습니다."
+    if error == "not_html":
+        return "분석 가능한 HTML 페이지가 아닙니다."
+    if error == "too_large":
+        return "페이지가 너무 커서 분석하지 않았습니다."
+    if error == "blocked_host":
+        return "내부망 또는 차단된 호스트라 분석하지 않았습니다."
+    if error == "unexpected_redirect":
+        return "예상하지 못한 리다이렉트 응답으로 페이지를 분석하지 못했습니다."
+    return "페이지를 가져오지 못했습니다."
+
+
 def _fetch_failed_result(final_url: str, error: str | None) -> ContentAnalysisResult:
     return ContentAnalysisResult(
         final_url=final_url,
         fetched=False,
+        status_code=None,
         score=_fetch_failed_score(error),
         signals=[ContentSignal.FETCH_FAILED],
+        reason=_fetch_failed_reason(error),
         error=error,
     )
 
@@ -98,7 +125,7 @@ async def analyze_content(
     final_url: str,
     *,
     provider: AIProvider | None = None,
-    upstream_signals: Iterable[str] = (),
+    upstream_signals: Iterable[str] | Awaitable[Iterable[str]] = (),
 ) -> ContentAnalysisResult:
     """콘텐츠 정적 분석 진입점.
 
@@ -115,7 +142,9 @@ async def analyze_content(
             error=fetch_result.error,
             status=fetch_result.status_code,
         )
-        return _fetch_failed_result(final_url, fetch_result.error)
+        result = _fetch_failed_result(final_url, fetch_result.error)
+        result.status_code = fetch_result.status_code
+        return result
 
     features = await extract_features_async(fetch_result.html, base_url=final_url)
     scoring: ContentScoring = score_content(features, final_url)
@@ -127,7 +156,10 @@ async def analyze_content(
     ai_token_usage: TokenUsage | None = None
 
     active_provider = provider if provider is not None else get_ai_provider()
-    upstream_tuple = tuple(upstream_signals)
+    if inspect.isawaitable(upstream_signals):
+        upstream_tuple = tuple(await upstream_signals)
+    else:
+        upstream_tuple = tuple(upstream_signals)
     try:
         inference = await active_provider.infer(
             _build_prompt_context(final_url, features, upstream_tuple)
@@ -163,6 +195,7 @@ async def analyze_content(
     return ContentAnalysisResult(
         final_url=final_url,
         fetched=True,
+        status_code=fetch_result.status_code,
         score=score,
         signals=list(scoring.signals),
         title=features.title,

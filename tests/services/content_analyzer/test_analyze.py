@@ -20,7 +20,7 @@ def _mock_fetch(ok: bool, html: str = "", error: str | None = None, status: int 
             return_value=FetchResult(
                 ok=ok,
                 url="https://x.test/",
-                status_code=status if ok else None,
+                status_code=status,
                 html=html,
                 error=error,
             )
@@ -53,6 +53,23 @@ class TestFetchFailure:
         assert ContentSignal.FETCH_FAILED in result.signals
         assert result.score == settings.score_weight_content_fetch_failed
         assert result.ai_verdict is None
+
+    async def test_http_404_fetch_failure_has_human_readable_reason(self) -> None:
+        with _mock_fetch(ok=False, error="http_error_404", status=404):
+            result = await analyze_content("https://missing.test/")
+
+        assert result.fetched is False
+        assert result.error == "http_error_404"
+        assert result.reason == "페이지를 찾을 수 없습니다."
+        assert result.status_code == 404
+        assert result.ai_verdict is None
+
+    async def test_success_exposes_final_url_status_code(self) -> None:
+        with _mock_fetch(ok=True, html="<html></html>", status=204):
+            result = await analyze_content("https://ok.test/")
+
+        assert result.fetched is True
+        assert result.status_code == 204
 
     @pytest.mark.parametrize("error", ["not_html", "too_large", "unexpected_redirect"])
     async def test_benign_fetch_errors_score_zero(self, error: str) -> None:
