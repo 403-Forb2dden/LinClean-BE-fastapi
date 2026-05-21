@@ -300,7 +300,7 @@ class TestVerdictAndScore:
     async def test_danger_when_threat_matches_even_below_threshold(
         self, async_session: AsyncSession
     ) -> None:
-        """GSB 매치 시 합산 점수가 임계 미만이어도 verdict 는 강제로 danger."""
+        """GSB 매치 시 known malicious 로 보고 score=100, verdict=danger."""
         final_url = "https://blacklist.test/"
         # short-circuit 경로 — heuristic 은 placeholder, content skip
         with (
@@ -322,8 +322,7 @@ class TestVerdictAndScore:
             result = await run_pipeline("aid-blk", final_url, async_session)
 
         assert isinstance(result, PipelineSuccess)
-        # GSB +50 만 합산되고 임계 61 미달이지만 is_malicious=True 라 verdict=danger
-        assert result.score == 50
+        assert result.score == 100
         assert result.verdict == Verdict.DANGER
 
     async def test_verdict_score_appear_before_stages_in_response(
@@ -488,7 +487,7 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
         patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
         patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
         patch("app.services.pipeline.check_domain_heuristic", side_effect=slow_heuristic),
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -497,6 +496,8 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
         result = await run_pipeline("aid-sc", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
+    assert result.score == 100
+    mock_content.assert_not_awaited()
     # heuristic 은 cancel 되어 본문이 끝까지 돌지 않았어야 한다
     assert heuristic_finished.is_set() is False
     # 4단계 응답은 skip
@@ -552,8 +553,7 @@ async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first
     assert result.stages.domain_heuristic.score == 0
     assert result.stages.domain_heuristic.rdap_error is None
     assert result.stages.domain_heuristic.skipped_reason == "threat_matched"
-    # GSB(+50) + heuristic placeholder(0) + content skip(0) = 50, verdict 는 DANGER 강제.
-    assert result.score == 50
+    assert result.score == 100
     assert result.verdict == Verdict.DANGER
 
 
@@ -579,7 +579,7 @@ async def test_run_pipeline_short_circuits_on_urlhaus_match(
         patch(
             "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
         ) as mock_heuristic,
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -589,6 +589,8 @@ async def test_run_pipeline_short_circuits_on_urlhaus_match(
         result = await run_pipeline("aid-urlhaus", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
+    assert result.score == 100
+    mock_content.assert_not_awaited()
     assert result.stages.content_analysis.error == "skipped_already_danger"
 
 
@@ -606,7 +608,7 @@ async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold
         patch(
             "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
         ) as mock_heuristic,
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -616,4 +618,34 @@ async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold
         result = await run_pipeline("aid-heur", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
+    mock_content.assert_not_awaited()
     assert result.stages.content_analysis.error == "skipped_already_danger"
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_does_not_start_content_when_stage_2_3_fails(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://error.test/"
+
+    async def failing_threat(_session: AsyncSession, _url: str) -> ThreatDbResult:
+        raise RuntimeError("threat db failed")
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", side_effect=failing_threat),
+        patch(
+            "app.services.pipeline.check_domain_heuristic",
+            new_callable=AsyncMock,
+            return_value=_heuristic_with_score(0),
+        ),
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+
+        with pytest.raises(RuntimeError, match="threat db failed"):
+            await run_pipeline("aid-error-cleanup", final_url, async_session)
+
+    mock_content.assert_not_awaited()

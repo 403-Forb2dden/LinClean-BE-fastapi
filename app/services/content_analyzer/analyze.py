@@ -62,6 +62,7 @@ def _ai_score_weight(verdict: AIVerdict) -> int:
 _FETCH_ERROR_NO_SCORE: frozenset[str] = frozenset(
     {"not_html", "too_large", "unexpected_redirect", "blocked_host"}
 )
+_SKIPPED_ALREADY_DANGER_REASON = "위험성이 확인된 URL입니다. 페이지를 열지 않는 것이 좋습니다."
 
 
 def _fetch_failed_score(error: str | None) -> int:
@@ -117,6 +118,7 @@ def skipped_already_danger(final_url: str) -> ContentAnalysisResult:
         fetched=False,
         score=0,
         signals=[ContentSignal.SKIPPED_ALREADY_DANGER],
+        reason=_SKIPPED_ALREADY_DANGER_REASON,
         error="skipped_already_danger",
     )
 

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
-from contextlib import suppress
 
 import structlog
 
@@ -94,14 +92,6 @@ def _collect_db_independent_signals(
     return tuple(codes)
 
 
-async def _collect_db_independent_signals_after_heuristic(
-    heuristic_task: asyncio.Task[DomainHeuristicResult],
-    unchain: UnchainResult,
-) -> tuple[str, ...]:
-    heuristic = await heuristic_task
-    return _collect_db_independent_signals(heuristic, unchain)
-
-
 async def run_db_independent_pipeline(
     analysis_id: str,
     original_url: str,
@@ -135,41 +125,18 @@ async def run_db_independent_pipeline(
     _set_stage_timing(stage_timings, PipelineStage.UNCHAIN, stage_started)
 
     stage_started = time.perf_counter()
-    heuristic_task = asyncio.create_task(check_domain_heuristic(unchain.final_url))
-
-    async def _timed_heuristic() -> DomainHeuristicResult:
-        try:
-            return await heuristic_task
-        finally:
-            _set_stage_timing(stage_timings, PipelineStage.DOMAIN_HEURISTIC, stage_started)
-
-    timed_heuristic_task = asyncio.create_task(_timed_heuristic())
-
-    content_started = time.perf_counter()
-    upstream_task = asyncio.create_task(
-        _collect_db_independent_signals_after_heuristic(heuristic_task, unchain)
-    )
-    content_task = asyncio.create_task(
-        analyze_content(
-            unchain.final_url,
-            upstream_signals=upstream_task,
-        )
-    )
-
-    heuristic = await timed_heuristic_task
+    heuristic = await check_domain_heuristic(unchain.final_url)
+    _set_stage_timing(stage_timings, PipelineStage.DOMAIN_HEURISTIC, stage_started)
 
     if heuristic.score >= settings.score_danger_threshold:
-        content_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await content_task
         stage_started = time.perf_counter()
         content = skipped_already_danger(unchain.final_url)
         _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
     else:
-        try:
-            content = await content_task
-        finally:
-            _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, content_started)
+        upstream = _collect_db_independent_signals(heuristic, unchain)
+        stage_started = time.perf_counter()
+        content = await analyze_content(unchain.final_url, upstream_signals=upstream)
+        _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
 
     score = _total_score(heuristic, content)
     verdict = _decide_verdict(score)

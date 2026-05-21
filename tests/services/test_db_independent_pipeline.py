@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -125,21 +124,16 @@ async def test_db_independent_pipeline_passes_url_and_redirect_signals_to_conten
 
 
 @pytest.mark.asyncio
-async def test_db_independent_pipeline_runs_heuristic_and_content_concurrently() -> None:
-    final_url = "https://parallel.example.com/login"
+async def test_db_independent_pipeline_skips_content_when_heuristic_is_danger() -> None:
+    final_url = "https://danger.example.com/login"
     content_started = asyncio.Event()
-    heuristic_started = asyncio.Event()
 
     async def _slow_heuristic(_: str) -> DomainHeuristicResult:
-        heuristic_started.set()
-        await content_started.wait()
         await asyncio.sleep(0.01)
-        return _make_heuristic(15)
+        return _make_heuristic(65)
 
     async def _slow_content(_: str, **__: object) -> ContentAnalysisResult:
         content_started.set()
-        await heuristic_started.wait()
-        await asyncio.sleep(0.01)
         return _make_content(final_url, score=20)
 
     with (
@@ -159,13 +153,44 @@ async def test_db_independent_pipeline_runs_heuristic_and_content_concurrently()
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
 
-        started = time.perf_counter()
         result = await run_db_independent_pipeline("aid-parallel", final_url)
 
     assert isinstance(result, DbIndependentPipelineSuccess)
-    assert result.score == 35
-    assert time.perf_counter() - started < 0.08
-    mock_content.assert_awaited_once()
+    assert result.score == 65
+    assert result.stages.content_analysis.error == "skipped_already_danger"
+    assert content_started.is_set() is False
+    mock_content.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_db_independent_pipeline_does_not_start_content_when_heuristic_fails() -> None:
+    final_url = "https://error.example.com/login"
+
+    async def _failing_heuristic(_: str) -> DomainHeuristicResult:
+        await asyncio.sleep(0.01)
+        raise RuntimeError("heuristic failed")
+
+    with (
+        patch("app.services.db_independent_pipeline.normalize_url") as mock_norm,
+        patch(
+            "app.services.db_independent_pipeline.unchain_url", new_callable=AsyncMock
+        ) as mock_unchain,
+        patch(
+            "app.services.db_independent_pipeline.check_domain_heuristic",
+            new=AsyncMock(side_effect=_failing_heuristic),
+        ),
+        patch(
+            "app.services.db_independent_pipeline.analyze_content",
+            new_callable=AsyncMock,
+        ) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+
+        with pytest.raises(RuntimeError, match="heuristic failed"):
+            await run_db_independent_pipeline("aid-error-cleanup", final_url)
+
+    mock_content.assert_not_awaited()
 
 
 @pytest.mark.asyncio

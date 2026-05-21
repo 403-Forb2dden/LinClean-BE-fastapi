@@ -9,7 +9,7 @@ import pytest
 from app.core.config import settings
 from app.schemas.content_analysis import AIVerdict, ContentSignal, TokenUsage
 from app.services.content_analyzer.ai import AIInference, AIPromptContext, NullAIProvider
-from app.services.content_analyzer.analyze import analyze_content
+from app.services.content_analyzer.analyze import analyze_content, skipped_already_danger
 from app.services.content_analyzer.fetch import FetchResult
 
 
@@ -93,6 +93,14 @@ class TestFetchFailure:
         ext_mock.assert_not_called()
         sig_mock.assert_not_called()
         ai_mock.assert_not_called()
+
+    def test_skipped_already_danger_has_fixed_user_reason(self) -> None:
+        result = skipped_already_danger("https://danger.test/")
+
+        assert result.fetched is False
+        assert result.ai_reason is None
+        assert result.reason == "위험성이 확인된 URL입니다. 페이지를 열지 않는 것이 좋습니다."
+        assert result.error == "skipped_already_danger"
 
 
 class TestBrandImpersonationEndToEnd:

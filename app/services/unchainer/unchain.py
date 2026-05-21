@@ -97,6 +97,11 @@ def _https_variant(url: str) -> str | None:
     return urlunparse(parsed._replace(scheme="https"))
 
 
+def _is_analyzable_html_response(resp: httpx.Response) -> bool:
+    content_type = resp.headers.get("content-type", "").lower()
+    return 200 <= resp.status_code < 400 and "text/html" in content_type
+
+
 async def _https_responds(client: httpx.AsyncClient, url: str, headers: dict[str, str]) -> bool:
     https_url = _https_variant(url)
     if https_url is None:
@@ -104,16 +109,19 @@ async def _https_responds(client: httpx.AsyncClient, url: str, headers: dict[str
     safety_error = await _check_host_safety(https_url)
     if safety_error is not None:
         return False
+    resp: httpx.Response | None = None
     try:
         req = client.build_request("HEAD", https_url, headers=headers)
         resp = await asyncio.wait_for(
             client.send(req, stream=True),
             timeout=settings.schemeless_https_probe_timeout_seconds,
         )
-        await resp.aclose()
+        return _is_analyzable_html_response(resp)
     except (TimeoutError, httpx.HTTPError):
         return False
-    return resp.status_code < 500
+    finally:
+        if resp is not None:
+            await resp.aclose()
 
 
 async def unchain_url(url: str, *, prefer_https_when_schemeless: bool = False) -> UnchainResult:
