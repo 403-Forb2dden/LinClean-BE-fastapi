@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
@@ -46,6 +47,12 @@ def _make_heuristic(domain: str) -> DomainHeuristicResult:
 
 def _make_content(final_url: str, *, score: int = 0) -> ContentAnalysisResult:
     return ContentAnalysisResult(final_url=final_url, fetched=True, score=score, signals=[])
+
+
+async def _resolve_upstream(value: object) -> object:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 async def _run_with_scores(
@@ -119,7 +126,7 @@ async def test_run_pipeline_includes_domain_heuristic_stage(async_session: Async
     args, kwargs = mock_content.await_args
     assert args == (final_url,)
     # _make_heuristic 가 HOSTING_PLATFORM 시그널을 가지므로 그대로 전달돼야 한다
-    assert kwargs["upstream_signals"] == ("HOSTING_PLATFORM",)
+    assert await _resolve_upstream(kwargs["upstream_signals"]) == ("HOSTING_PLATFORM",)
 
 
 @pytest.mark.asyncio
@@ -186,7 +193,7 @@ async def test_run_pipeline_skips_content_when_gsb_malicious(
         patch(
             "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
         ) as mock_heuristic,
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -197,8 +204,7 @@ async def test_run_pipeline_skips_content_when_gsb_malicious(
         result = await run_pipeline("aid-skip", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
-    # 네트워크·AI 비용을 아끼기 위해 analyze_content 는 호출되지 않아야 한다
-    mock_content.assert_not_awaited()
+    # 병렬 선시작 이후에도 최종 응답은 skip 결과로 고정돼야 한다.
     content = result.stages.content_analysis
     assert content.fetched is False
     assert content.error == "skipped_already_danger"
@@ -231,7 +237,10 @@ async def test_run_pipeline_runs_content_when_below_danger(
         await run_pipeline("aid-run", final_url, async_session)
 
     # heuristic 시그널 없는 경우 upstream_signals 는 빈 튜플로 전달돼야 한다
-    mock_content.assert_awaited_once_with(final_url, upstream_signals=())
+    mock_content.assert_awaited_once()
+    args, kwargs = mock_content.await_args
+    assert args == (final_url,)
+    assert await _resolve_upstream(kwargs["upstream_signals"]) == ()
 
 
 class TestVerdictAndScore:
@@ -376,7 +385,7 @@ async def test_run_pipeline_passes_upstream_signals_to_content_analysis(
     mock_content.assert_awaited_once()
     args, kwargs = mock_content.await_args
     assert args == (final_url,)
-    assert kwargs["upstream_signals"] == ("TYPO_DOMAIN", "NEW_DOMAIN")
+    assert await _resolve_upstream(kwargs["upstream_signals"]) == ("TYPO_DOMAIN", "NEW_DOMAIN")
 
 
 @pytest.mark.asyncio
@@ -479,7 +488,7 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
         patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
         patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
         patch("app.services.pipeline.check_domain_heuristic", side_effect=slow_heuristic),
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -490,8 +499,7 @@ async def test_run_pipeline_short_circuits_on_gsb_match_and_cancels_heuristic(
     assert isinstance(result, PipelineSuccess)
     # heuristic 은 cancel 되어 본문이 끝까지 돌지 않았어야 한다
     assert heuristic_finished.is_set() is False
-    # 4단계 분석은 skip
-    mock_content.assert_not_awaited()
+    # 4단계 응답은 skip
     content = result.stages.content_analysis
     assert content.fetched is False
     assert content.error == "skipped_already_danger"
@@ -530,7 +538,7 @@ async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first
         patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
         patch("app.services.pipeline.check_threat_db", side_effect=slow_threat),
         patch("app.services.pipeline.check_domain_heuristic", side_effect=fast_heuristic),
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
         mock_norm.return_value = NormalizeResult(
             original_url=final_url, normalized_url=final_url
@@ -547,7 +555,6 @@ async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first
     # GSB(+50) + heuristic placeholder(0) + content skip(0) = 50, verdict 는 DANGER 강제.
     assert result.score == 50
     assert result.verdict == Verdict.DANGER
-    mock_content.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -572,7 +579,7 @@ async def test_run_pipeline_short_circuits_on_urlhaus_match(
         patch(
             "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
         ) as mock_heuristic,
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
@@ -582,7 +589,6 @@ async def test_run_pipeline_short_circuits_on_urlhaus_match(
         result = await run_pipeline("aid-urlhaus", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
-    mock_content.assert_not_awaited()
     assert result.stages.content_analysis.error == "skipped_already_danger"
 
 
@@ -600,13 +606,14 @@ async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold
         patch(
             "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
         ) as mock_heuristic,
-        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
         mock_threat.return_value = _make_threat(final_url)
         mock_heuristic.return_value = _heuristic_with_score(settings.score_danger_threshold)
 
-        await run_pipeline("aid-heur", final_url, async_session)
+        result = await run_pipeline("aid-heur", final_url, async_session)
 
-    mock_content.assert_not_awaited()
+    assert isinstance(result, PipelineSuccess)
+    assert result.stages.content_analysis.error == "skipped_already_danger"

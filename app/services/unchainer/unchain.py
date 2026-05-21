@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 
@@ -90,11 +90,37 @@ async def _check_host_safety(url: str) -> str | None:
     return None
 
 
-async def unchain_url(url: str) -> UnchainResult:
+def _https_variant(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        return None
+    return urlunparse(parsed._replace(scheme="https"))
+
+
+async def _https_responds(client: httpx.AsyncClient, url: str, headers: dict[str, str]) -> bool:
+    https_url = _https_variant(url)
+    if https_url is None:
+        return False
+    safety_error = await _check_host_safety(https_url)
+    if safety_error is not None:
+        return False
+    try:
+        req = client.build_request("HEAD", https_url, headers=headers)
+        resp = await asyncio.wait_for(
+            client.send(req, stream=True),
+            timeout=settings.schemeless_https_probe_timeout_seconds,
+        )
+        await resp.aclose()
+    except (TimeoutError, httpx.HTTPError):
+        return False
+    return resp.status_code < 500
+
+
+async def unchain_url(url: str, *, prefer_https_when_schemeless: bool = False) -> UnchainResult:
     """리다이렉트 체인을 추적하고 최종 URL·hop 기록·의심 신호를 반환."""
     try:
         return await asyncio.wait_for(
-            _unchain_url_inner(url),
+            _unchain_url_inner(url, prefer_https_when_schemeless=prefer_https_when_schemeless),
             timeout=settings.unchain_chain_timeout_seconds,
         )
     except TimeoutError:
@@ -109,7 +135,11 @@ async def unchain_url(url: str) -> UnchainResult:
         )
 
 
-async def _unchain_url_inner(url: str) -> UnchainResult:
+async def _unchain_url_inner(
+    url: str,
+    *,
+    prefer_https_when_schemeless: bool = False,
+) -> UnchainResult:
     """실제 체인 추적 로직. unchain_url에서 총 timeout으로 감싸서 호출."""
     hops: list[HopRecord] = []
     signals: list[str] = []
@@ -125,6 +155,12 @@ async def _unchain_url_inner(url: str) -> UnchainResult:
     }
 
     client = _get_client()
+    if prefer_https_when_schemeless and await _https_responds(client, current_url, headers):
+        https_url = _https_variant(current_url)
+        if https_url is not None:
+            current_url = https_url
+            signals.append("schemeless_https_upgrade")
+
     for _ in range(settings.unchain_max_hops):
         if current_url in visited:
             signals.append("redirect_loop")

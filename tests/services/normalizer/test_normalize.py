@@ -37,10 +37,10 @@ class TestInputValidation:
         assert result.normalized_url.startswith("https://example.com/")
 
     def test_max_length_checked_after_scheme_prepend(self) -> None:
-        padding = 1024 - len("https://") - len("example.com/")
+        padding = 1024 - len("http://") - len("example.com/")
         url_without_scheme = "example.com/" + "a" * padding
         result = normalize_url(url_without_scheme)
-        assert result.normalized_url.startswith("https://example.com/")
+        assert result.normalized_url.startswith("http://example.com/")
 
 
 class TestOriginalPreservation:
@@ -63,13 +63,20 @@ class TestScheme:
         result = normalize_url("HTTPS://Example.com/path")
         assert result.normalized_url == "https://example.com/path"
 
-    def test_no_scheme_defaults_to_https(self) -> None:
+    def test_no_scheme_defaults_to_http_and_marks_added_scheme(self) -> None:
         result = normalize_url("example.com/path")
-        assert result.normalized_url == "https://example.com/path"
+        assert result.normalized_url == "http://example.com/path"
+        assert result.scheme_was_added is True
+
+    def test_explicit_http_does_not_mark_added_scheme(self) -> None:
+        result = normalize_url("http://example.com/path")
+        assert result.normalized_url == "http://example.com/path"
+        assert result.scheme_was_added is False
 
     def test_scheme_like_string_in_path_gets_scheme_prepended(self) -> None:
         result = normalize_url("example.com/path://weird")
-        assert result.normalized_url.startswith("https://example.com/")
+        assert result.normalized_url.startswith("http://example.com/")
+        assert result.scheme_was_added is True
 
     def test_unsupported_scheme_raises(self) -> None:
         with pytest.raises(NormalizationError, match="지원하지 않는 스킴"):

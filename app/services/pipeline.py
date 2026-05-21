@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterable
 from contextlib import suppress
 from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlparse
@@ -135,16 +136,20 @@ def _collect_upstream_signals(
 async def _stage_content_analysis(
     log: structlog.stdlib.BoundLogger,
     final_url: str,
-    upstream_signals: tuple[str, ...],
+    upstream_signals: Iterable[str] | Awaitable[Iterable[str]],
 ) -> ContentAnalysisResult:
     result = await analyze_content(final_url, upstream_signals=upstream_signals)
+    if inspect.isawaitable(upstream_signals):
+        upstream_for_log: list[str] | str = "deferred"
+    else:
+        upstream_for_log = list(upstream_signals)
     log.info(
         "pipeline.content_analysis.done",
         fetched=result.fetched,
         score=result.score,
         signals=[s.value for s in result.signals],
         ai_verdict=result.ai_verdict.value if result.ai_verdict else None,
-        upstream_signals=list(upstream_signals),
+        upstream_signals=upstream_for_log,
     )
     return result
 
@@ -269,6 +274,15 @@ async def _run_stage_2_and_3(
         raise
 
 
+async def _collect_upstream_after_stage_2_and_3(
+    stage_task: asyncio.Task[tuple[ThreatDbResult, DomainHeuristicResult, bool]],
+) -> tuple[str, ...]:
+    threat, heuristic, short_circuited = await stage_task
+    if short_circuited:
+        return ()
+    return _collect_upstream_signals(threat, heuristic)
+
+
 async def run_pipeline(
     analysis_id: str,
     original_url: str,
@@ -297,14 +311,27 @@ async def run_pipeline(
     unchain: UnchainResult = await _timed_async_stage(
         stage_timings,
         PipelineStage.UNCHAIN,
-        _stage_unchain(log, norm.normalized_url),
+        unchain_url(norm.normalized_url, prefer_https_when_schemeless=norm.scheme_was_added),
     )
     # 2·3단계는 둘 다 unchain.final_url 만 필요하고 서로 독립이라 병렬로 돈다.
     # threat_db 가 먼저 malicious 로 끝나면 verdict 가 이미 danger 로 확정이므로
     # heuristic 을 cancel 하고 4단계까지 skip — 여기서 조기 종료가 일어난다.
-    threat, heuristic, short_circuited = await _run_stage_2_and_3(
-        log, unchain.final_url, session, stage_timings
+    stage_2_3_task = asyncio.create_task(
+        _run_stage_2_and_3(log, unchain.final_url, session, stage_timings)
     )
+    upstream_task = asyncio.create_task(_collect_upstream_after_stage_2_and_3(stage_2_3_task))
+    content_task = asyncio.create_task(
+        _timed_async_stage(
+            stage_timings,
+            PipelineStage.CONTENT_ANALYSIS,
+            _stage_content_analysis(
+                log,
+                unchain.final_url,
+                upstream_task,
+            ),
+        )
+    )
+    threat, heuristic, short_circuited = await stage_2_3_task
 
     if short_circuited:
         log.info(
@@ -313,6 +340,9 @@ async def run_pipeline(
             gsb_threat=threat.gsb.is_threat,
             urlhaus_threat=threat.urlhaus.is_threat,
         )
+        content_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await content_task
         stage_started = time.perf_counter()
         content = skipped_already_danger(unchain.final_url)
         _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
@@ -326,16 +356,14 @@ async def run_pipeline(
                 reason=("threat_db_match" if threat.is_malicious else "already_danger"),
                 preceding_score=preceding,
             )
+            content_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await content_task
             stage_started = time.perf_counter()
             content = skipped_already_danger(unchain.final_url)
             _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
         else:
-            upstream = _collect_upstream_signals(threat, heuristic)
-            content = await _timed_async_stage(
-                stage_timings,
-                PipelineStage.CONTENT_ANALYSIS,
-                _stage_content_analysis(log, unchain.final_url, upstream),
-            )
+            content = await content_task
 
     score = _total_score(threat, heuristic, content)
     verdict = _decide_verdict(score, threat)
