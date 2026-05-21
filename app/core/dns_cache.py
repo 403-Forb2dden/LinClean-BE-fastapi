@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from typing import Any, cast
+from typing import Any
 
-from cachetools import TTLCache  # type: ignore[import-untyped]
+from cachetools import TTLCache
 
 from app.core.config import settings
 
@@ -35,13 +35,13 @@ _cache: TTLCache[str, tuple[AddrInfoTuple, ...]] = TTLCache(
 async def resolve_host_addrs(hostname: str) -> tuple[AddrInfoTuple, ...]:
     """hostname 의 getaddrinfo 결과를 캐시. 실패 시 OSError 그대로 raise."""
     try:
-        return cast(tuple[AddrInfoTuple, ...], _cache[hostname])
+        return _cache[hostname]
     except KeyError:
         pass
 
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
-    result = cast(tuple[AddrInfoTuple, ...], tuple(infos))
+    result = tuple(infos)
     _cache[hostname] = result
     return result
 

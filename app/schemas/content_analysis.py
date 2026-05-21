@@ -36,6 +36,10 @@ class TokenUsage(BaseModel):
 class ContentAnalysisResult(BaseModel):
     final_url: str
     fetched: bool
+    status_code: int | None = Field(
+        default=None,
+        description="HTTP status code observed when fetching final_url for content analysis",
+    )
     score: int = 0
     signals: list[ContentSignal] = Field(
         default_factory=list,
@@ -59,6 +63,13 @@ class ContentAnalysisResult(BaseModel):
 
     ai_verdict: AIVerdict | None = None
     ai_reason: str | None = None
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "AI 여부와 무관한 사용자 표시용 설명. 예: http_error_404 는 "
+            "'페이지를 찾을 수 없습니다.' 로 내려간다."
+        ),
+    )
     ai_error: str | None = Field(
         default=None,
         description=(

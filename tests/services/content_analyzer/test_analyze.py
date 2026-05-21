@@ -9,7 +9,7 @@ import pytest
 from app.core.config import settings
 from app.schemas.content_analysis import AIVerdict, ContentSignal, TokenUsage
 from app.services.content_analyzer.ai import AIInference, AIPromptContext, NullAIProvider
-from app.services.content_analyzer.analyze import analyze_content
+from app.services.content_analyzer.analyze import analyze_content, skipped_already_danger
 from app.services.content_analyzer.fetch import FetchResult
 
 
@@ -20,7 +20,7 @@ def _mock_fetch(ok: bool, html: str = "", error: str | None = None, status: int 
             return_value=FetchResult(
                 ok=ok,
                 url="https://x.test/",
-                status_code=status if ok else None,
+                status_code=status,
                 html=html,
                 error=error,
             )
@@ -54,6 +54,23 @@ class TestFetchFailure:
         assert result.score == settings.score_weight_content_fetch_failed
         assert result.ai_verdict is None
 
+    async def test_http_404_fetch_failure_has_human_readable_reason(self) -> None:
+        with _mock_fetch(ok=False, error="http_error_404", status=404):
+            result = await analyze_content("https://missing.test/")
+
+        assert result.fetched is False
+        assert result.error == "http_error_404"
+        assert result.reason == "페이지를 찾을 수 없습니다."
+        assert result.status_code == 404
+        assert result.ai_verdict is None
+
+    async def test_success_exposes_final_url_status_code(self) -> None:
+        with _mock_fetch(ok=True, html="<html></html>", status=204):
+            result = await analyze_content("https://ok.test/")
+
+        assert result.fetched is True
+        assert result.status_code == 204
+
     @pytest.mark.parametrize("error", ["not_html", "too_large", "unexpected_redirect"])
     async def test_benign_fetch_errors_score_zero(self, error: str) -> None:
         """정상 컨텐츠(PDF/이미지/대형 정적)·파이프라인 이슈는 시그널만 남기고 가산은 0."""
@@ -76,6 +93,14 @@ class TestFetchFailure:
         ext_mock.assert_not_called()
         sig_mock.assert_not_called()
         ai_mock.assert_not_called()
+
+    def test_skipped_already_danger_has_fixed_user_reason(self) -> None:
+        result = skipped_already_danger("https://danger.test/")
+
+        assert result.fetched is False
+        assert result.ai_reason is None
+        assert result.reason == "위험성이 확인된 URL입니다. 페이지를 열지 않는 것이 좋습니다."
+        assert result.error == "skipped_already_danger"
 
 
 class TestBrandImpersonationEndToEnd:

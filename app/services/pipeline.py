@@ -165,6 +165,8 @@ def _total_score(
     content: ContentAnalysisResult,
 ) -> int:
     """전 단계 합산 후 100 으로 캡. content.score 는 4단계가 실제로 돌았을 때만 비-0."""
+    if threat.is_malicious:
+        return settings.score_total_cap
     return min(
         _preceding_score(threat, heuristic) + content.score,
         settings.score_total_cap,
@@ -172,7 +174,7 @@ def _total_score(
 
 
 def _decide_verdict(score: int, threat: ThreatDbResult) -> Verdict:
-    """blacklist 매치는 점수와 무관하게 danger. 나머지는 점수 구간으로 매핑."""
+    """Known malicious 매치는 danger. 나머지는 점수 구간으로 매핑."""
     if threat.is_malicious:
         return Verdict.DANGER
     if score >= settings.score_danger_threshold:
@@ -297,7 +299,7 @@ async def run_pipeline(
     unchain: UnchainResult = await _timed_async_stage(
         stage_timings,
         PipelineStage.UNCHAIN,
-        _stage_unchain(log, norm.normalized_url),
+        unchain_url(norm.normalized_url, prefer_https_when_schemeless=norm.scheme_was_added),
     )
     # 2·3단계는 둘 다 unchain.final_url 만 필요하고 서로 독립이라 병렬로 돈다.
     # threat_db 가 먼저 malicious 로 끝나면 verdict 가 이미 danger 로 확정이므로

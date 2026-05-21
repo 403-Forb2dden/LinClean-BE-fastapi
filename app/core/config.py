@@ -83,7 +83,7 @@ class Settings(BaseSettings):
 
     # RDAP
     rdap_bootstrap_url: str = "https://rdap.org/domain/"
-    rdap_timeout_seconds: float = 5.0
+    rdap_timeout_seconds: float = 3.0
     rdap_cache_ttl_seconds: int = 60 * 60 * 24 * 7  # 7d
     # TTL 동안 누적될 수 있는 도메인 엔트리 상한. 무작위 도메인 트래픽이 들어와도
     # 메모리가 무한 성장하지 않도록 LRU 로 끊는다. 일 100만 URL 기준 도메인 수 5만 이하 가정.
@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     unchain_max_hops: int = 5
     unchain_timeout_seconds: float = 5.0
     unchain_connect_timeout_seconds: float = 3.0
-    unchain_chain_timeout_seconds: float = 20.0
+    unchain_chain_timeout_seconds: float = 6.0
+    schemeless_https_probe_timeout_seconds: float = 1.0
     unchain_user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -144,7 +145,7 @@ class Settings(BaseSettings):
     domain_label_length_threshold: int = 20
 
     # 페이지 콘텐츠 정적 분석 (4단계)
-    content_fetch_timeout_seconds: float = 8.0
+    content_fetch_timeout_seconds: float = 4.0
     content_fetch_connect_timeout_seconds: float = 3.0
     content_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MiB 이상이면 끊고 분석
     # DNS rebinding 잔여 위험은 앱 레벨 사전 해석만으로 완전히 닫을 수 없다. 운영에서 분석 전용
@@ -209,8 +210,8 @@ class Settings(BaseSettings):
     # OpenAI — 모델 교체는 OPENAI_MODEL 한 줄로 끝난다 (gpt-4o-mini / gpt-4o / gpt-4.1-mini).
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
-    openai_timeout_seconds: float = 10.0
-    openai_max_output_tokens: int = 300
+    openai_timeout_seconds: float = 5.0
+    openai_max_output_tokens: int = 120
 
     # Spring 통신
     internal_api_key: str

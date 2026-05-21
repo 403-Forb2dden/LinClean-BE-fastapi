@@ -132,6 +132,53 @@ class TestBasicChain:
         assert result.final_url == "https://a.com/final"
         assert result.hop_count == 4
 
+    @pytest.mark.asyncio
+    async def test_schemeless_prefers_https_when_https_is_analyzable(self) -> None:
+        def _side_effect(method: str, url: str) -> httpx.Response:
+            assert method == "HEAD"
+            if url == "https://example.com/path":
+                return _make_response(200, {"content-type": "text/html; charset=utf-8"})
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        client = _mock_client(side_effect=_side_effect)
+
+        with patch(_PATCH_TARGET, return_value=client):
+            result = await unchain_url(
+                "http://example.com/path",
+                prefer_https_when_schemeless=True,
+            )
+
+        assert result.final_url == "https://example.com/path"
+        assert "schemeless_https_upgrade" in result.signals
+
+    @pytest.mark.asyncio
+    async def test_schemeless_falls_back_to_http_when_https_is_not_analyzable(self) -> None:
+        requests: list[tuple[str, str]] = []
+
+        def _side_effect(method: str, url: str) -> httpx.Response:
+            requests.append((method, url))
+            if url == "https://example.com/path":
+                return _make_response(404)
+            if url == "http://example.com/path":
+                return _make_response(200)
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        client = _mock_client(side_effect=_side_effect)
+
+        with patch(_PATCH_TARGET, return_value=client):
+            result = await unchain_url(
+                "http://example.com/path",
+                prefer_https_when_schemeless=True,
+            )
+
+        assert result.final_url == "http://example.com/path"
+        assert result.hops[0].status_code == 200
+        assert "schemeless_https_upgrade" not in result.signals
+        assert requests == [
+            ("HEAD", "https://example.com/path"),
+            ("HEAD", "http://example.com/path"),
+        ]
+
 
 class TestRedirectLoop:
     """무한 루프 감지."""

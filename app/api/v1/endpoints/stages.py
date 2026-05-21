@@ -98,7 +98,10 @@ async def stage_normalize(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"invalid url: {exc.message}",
         ) from exc
-    unchain_result = await unchain_url(normalize_result.normalized_url)
+    unchain_result = await unchain_url(
+        normalize_result.normalized_url,
+        prefer_https_when_schemeless=normalize_result.scheme_was_added,
+    )
     return StageNormalizeResponse(normalize=normalize_result, unchain=unchain_result)
 
 

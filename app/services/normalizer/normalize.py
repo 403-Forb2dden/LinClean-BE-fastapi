@@ -36,8 +36,9 @@ def normalize_url(raw_url: str) -> NormalizeResult:
 
     # 길이 체크 전에 스킴 확정해야 함 — 스킴 붙이면 바이트 늘어남.
     # 단순 "://" 체크는 "example.com/path://weird" 같은 케이스 놓침.
-    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://", cleaned):
-        cleaned = "https://" + cleaned
+    scheme_was_added = not re.match(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://", cleaned)
+    if scheme_was_added:
+        cleaned = "http://" + cleaned
 
     max_len = settings.normalizer_max_url_length
     if len(cleaned) > max_len:
@@ -76,7 +77,11 @@ def normalize_url(raw_url: str) -> NormalizeResult:
     query = _normalize_pct_encoding(parsed.query)
 
     normalized = urlunparse((scheme, netloc, path, params, query, ""))
-    return NormalizeResult(original_url=original, normalized_url=normalized)
+    return NormalizeResult(
+        original_url=original,
+        normalized_url=normalized,
+        scheme_was_added=scheme_was_added,
+    )
 
 
 def _normalize_idn(hostname: str) -> str:

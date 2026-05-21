@@ -20,8 +20,13 @@ from pydantic import BaseModel
 from app.api.deps import DBSession, InternalApiKey
 from app.db.session import SessionLocal
 from app.schemas.analyze import AnalyzeAccepted, AnalyzeRequest
+from app.schemas.db_independent_pipeline import (
+    DbIndependentPipelineFailure,
+    DbIndependentPipelineSuccess,
+)
 from app.schemas.pipeline import PipelineFailure, PipelineSuccess
 from app.services.analysis_callback import post_analysis_callback
+from app.services.db_independent_pipeline import run_db_independent_pipeline
 from app.services.pipeline import run_pipeline
 
 router = APIRouter()
@@ -92,4 +97,25 @@ async def analyze_sync(
         analysis_id=analysis_id,
         original_url=body.url,
         session=session,
+    )
+
+
+@router.post(
+    "/analyze/db-independent/sync",
+    response_model=DbIndependentPipelineSuccess | DbIndependentPipelineFailure,
+    summary="DB 비의존 파이프라인 — 동기 결과 반환",
+    description=(
+        "GSB, URLhaus 등 외부 threat DB 조회 없이 URL 정규화, 리다이렉트 체인, "
+        "도메인 휴리스틱, 콘텐츠 정적 분석 결과만으로 verdict/score 를 산출합니다. "
+        "외부 DB 의존도를 제거한 실험·QA 용 경로입니다."
+    ),
+)
+async def analyze_db_independent_sync(
+    body: AnalyzeSyncRequest,
+    _: InternalApiKey,
+) -> DbIndependentPipelineSuccess | DbIndependentPipelineFailure:
+    analysis_id = str(uuid.uuid4())
+    return await run_db_independent_pipeline(
+        analysis_id=analysis_id,
+        original_url=body.url,
     )
