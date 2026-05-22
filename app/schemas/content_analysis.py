@@ -15,6 +15,7 @@ class ContentSignal(StrEnum):
     RISKY_DOWNLOAD_LINK = "RISKY_DOWNLOAD_LINK"
     PUBLIC_AGENCY_LURE = "PUBLIC_AGENCY_LURE"
     KOREAN_LURE_TEXT = "KOREAN_LURE_TEXT"
+    RENDERED_DOM_ANALYZED = "RENDERED_DOM_ANALYZED"
     META_REFRESH = "META_REFRESH"
     EXTERNAL_META_REFRESH = "EXTERNAL_META_REFRESH"
     EXTERNAL_LINK_OVERUSE = "EXTERNAL_LINK_OVERUSE"
@@ -73,6 +74,8 @@ class ContentAnalysisResult(BaseModel):
     sensitive_field_types: list[str] = Field(default_factory=list)
     korean_lure_keywords: list[str] = Field(default_factory=list)
     public_agency_keywords: list[str] = Field(default_factory=list)
+    precision_analysis_used: bool = False
+    precision_analysis_error: str | None = None
 
     ai_verdict: AIVerdict | None = None
     ai_reason: str | None = None

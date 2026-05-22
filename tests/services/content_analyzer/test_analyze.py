@@ -11,6 +11,7 @@ from app.schemas.content_analysis import AIVerdict, ContentSignal, TokenUsage
 from app.services.content_analyzer.ai import AIInference, AIPromptContext, NullAIProvider
 from app.services.content_analyzer.analyze import analyze_content, skipped_already_danger
 from app.services.content_analyzer.fetch import FetchResult
+from app.services.content_analyzer.render import RenderResult
 
 
 def _mock_fetch(ok: bool, html: str = "", error: str | None = None, status: int = 200):
@@ -330,6 +331,79 @@ class TestSpaShellEndToEnd:
         assert result.score == 0
         assert len(seen) == 1
         assert seen[0].is_spa_shell is True
+
+
+class TestPrecisionSlowPath:
+    async def test_spa_shell_uses_rendered_dom_for_scoring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """정적 HTML 이 SPA 셸뿐이어도 렌더링 DOM 에 민감 폼이 있으면 공통 룰로 재점수화한다."""
+
+        class BenignAI:
+            async def infer(self, ctx: AIPromptContext) -> AIInference:
+                return AIInference(verdict=AIVerdict.BENIGN, reason="local evidence")
+
+        static_shell = (
+            '<!doctype html><html><head><title>조회</title>'
+            '<script type="module" src="/app.js"></script></head>'
+            '<body><div id="root"></div></body></html>'
+        )
+        rendered_html = """
+        <html>
+          <head><title>고유가 피해지원금 대상 조회</title></head>
+          <body>
+            <h1>국민건강보험 고유가 피해지원금 지급대상 여부 조회</h1>
+            <form>
+              <label for="rrn">주민등록번호</label>
+              <input id="rrn" name="resident_registration_number" placeholder="주민등록번호">
+              <button type="button">지원금 대상 조회하기</button>
+            </form>
+          </body>
+        </html>
+        """
+
+        monkeypatch.setattr(
+            "app.services.content_analyzer.analyze.get_ai_provider",
+            lambda: BenignAI(),
+        )
+        with (
+            _mock_fetch(ok=True, html=static_shell),
+            patch(
+                "app.services.content_analyzer.analyze.render_page",
+                AsyncMock(
+                    return_value=RenderResult(
+                        ok=True,
+                        url="https://spa.test/",
+                        html=rendered_html,
+                    )
+                ),
+            ) as mock_render,
+        ):
+            result = await analyze_content("https://spa.test/")
+
+        mock_render.assert_awaited_once_with("https://spa.test/")
+        assert result.precision_analysis_used is True
+        assert result.precision_analysis_error is None
+        assert result.is_spa_shell is False
+        assert ContentSignal.RENDERED_DOM_ANALYZED in result.signals
+        assert ContentSignal.PII_COLLECTION_FORM in result.signals
+        assert "resident_registration_number" in result.sensitive_field_types
+        assert result.score >= settings.score_danger_threshold
+
+    async def test_clean_static_page_skips_precision_slow_path(self) -> None:
+        html = "<html><head><title>Hello</title></head><body><p>ok</p></body></html>"
+        with (
+            _mock_fetch(ok=True, html=html),
+            patch(
+                "app.services.content_analyzer.analyze.render_page",
+                new_callable=AsyncMock,
+            ) as mock_render,
+        ):
+            result = await analyze_content("https://benign.test/")
+
+        mock_render.assert_not_awaited()
+        assert result.precision_analysis_used is False
+        assert result.precision_analysis_error is None
 
 
 class TestCancelledError:

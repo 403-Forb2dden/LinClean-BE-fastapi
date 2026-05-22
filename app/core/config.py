@@ -175,6 +175,13 @@ class Settings(BaseSettings):
     # BS4 파싱은 입력 본문 대비 ~10배 메모리를 점유한다. FastAPI 동시성에 곱셈으로 폭주하는
     # 걸 막기 위해 추출 단계에 글로벌 세마포어를 둔다 — 동시성 N 이 와도 피크는 이 값 * per-page.
     content_extract_concurrency: int = 8
+    # 정확도 우선 slow path. 정적 HTML 로 판정이 애매하거나 SPA 셸인 경우에만 브라우저
+    # 렌더링 DOM 을 추가 분석한다. Playwright 미설치 환경에서는 degraded no-op.
+    content_precision_enabled: bool = True
+    content_precision_min_score: int = 20
+    content_render_timeout_seconds: float = 6.0
+    content_render_settle_ms: int = 500
+    content_render_concurrency: int = 2
 
     # 콘텐츠 분석 점수
     score_weight_brand_impersonation: int = 50
