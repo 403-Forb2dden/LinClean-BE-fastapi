@@ -180,6 +180,12 @@ class Settings(BaseSettings):
     score_weight_brand_impersonation: int = 50
     score_weight_logo_alt_impersonation: int = 30
     score_weight_credential_form_external: int = 45
+    score_weight_pii_collection_form: int = 35
+    score_weight_sensitive_id_field: int = 30
+    score_weight_financial_field: int = 25
+    score_weight_risky_download_link: int = 35
+    score_weight_public_agency_lure: int = 20
+    score_weight_korean_lure: int = 15
     score_weight_meta_refresh: int = 20
     score_weight_external_meta_refresh: int = 25
     score_weight_external_link_overuse: int = 15
