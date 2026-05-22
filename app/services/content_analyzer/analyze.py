@@ -43,6 +43,13 @@ def _build_prompt_context(
         has_password_form_external_action=features.has_password_form_external_action,
         has_external_meta_refresh=features.has_external_meta_refresh,
         upstream_signals=upstream_signals,
+        body_text_snippets=tuple(features.body_text_snippets),
+        form_field_summaries=tuple(features.form_field_summaries),
+        cta_texts=tuple(features.cta_texts),
+        download_links=tuple(features.download_links),
+        sensitive_field_types=tuple(features.sensitive_field_types),
+        korean_lure_keywords=tuple(features.korean_lure_keywords),
+        public_agency_keywords=tuple(features.public_agency_keywords),
     )
 
 
@@ -209,6 +216,13 @@ async def analyze_content(
         brand_impersonation=scoring.brand_impersonation,
         logo_alt_impersonation=scoring.logo_alt_impersonation,
         is_spa_shell=features.is_spa_shell,
+        body_text_snippets=features.body_text_snippets,
+        form_field_summaries=features.form_field_summaries,
+        cta_texts=features.cta_texts,
+        download_links=features.download_links,
+        sensitive_field_types=features.sensitive_field_types,
+        korean_lure_keywords=features.korean_lure_keywords,
+        public_agency_keywords=features.public_agency_keywords,
         ai_verdict=ai_verdict,
         ai_reason=ai_reason,
         ai_error=ai_error,

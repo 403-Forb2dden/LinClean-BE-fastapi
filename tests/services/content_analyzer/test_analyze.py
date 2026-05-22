@@ -126,6 +126,71 @@ class TestBrandImpersonationEndToEnd:
         assert result.has_password_field is True
 
 
+class TestHighSignalContextEndToEnd:
+    async def test_high_signal_features_surface_and_ai_sees_structured_summary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[AIPromptContext] = []
+
+        class CaptureAI:
+            async def infer(self, ctx: AIPromptContext) -> AIInference:
+                seen.append(ctx)
+                return AIInference(verdict=AIVerdict.BENIGN, reason="local signals enough")
+
+        monkeypatch.setattr(
+            "app.services.content_analyzer.analyze.get_ai_provider",
+            lambda: CaptureAI(),
+        )
+        html = """
+        <html>
+          <head><title>고유가 피해지원금 대상 조회</title></head>
+          <body>
+            <h1>국민건강보험 고유가 피해지원금 지급대상 여부 조회</h1>
+            <form>
+              <label for="rrn">주민등록번호</label>
+              <input id="rrn" name="resident_registration_number" placeholder="주민등록번호">
+              <button type="button">지원금 대상 조회하기</button>
+            </form>
+          </body>
+        </html>
+        """
+        with _mock_fetch(ok=True, html=html):
+            result = await analyze_content("https://nhis-support.test/")
+
+        assert result.body_text_snippets
+        assert "지원금 대상 조회하기" in result.cta_texts
+        assert "resident_registration_number" in result.sensitive_field_types
+        assert ContentSignal.PII_COLLECTION_FORM in result.signals
+        assert len(seen) == 1
+        assert "지원금 대상 조회하기" in seen[0].cta_texts
+        assert "resident_registration_number" in seen[0].sensitive_field_types
+        assert "국민건강보험" in seen[0].public_agency_keywords
+
+    async def test_ai_provider_still_called_once_with_extended_context(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = 0
+
+        class CountingAI:
+            async def infer(self, ctx: AIPromptContext) -> AIInference:
+                nonlocal calls
+                calls += 1
+                return AIInference(verdict=AIVerdict.SUSPICIOUS, reason="structured context")
+
+        monkeypatch.setattr(
+            "app.services.content_analyzer.analyze.get_ai_provider",
+            lambda: CountingAI(),
+        )
+        html = (
+            '<html><body><a href="/downloads/kakaotalk.apk">'
+            "카카오톡 최신버전 다운로드</a></body></html>"
+        )
+        with _mock_fetch(ok=True, html=html):
+            await analyze_content("https://obituary.test/")
+
+        assert calls == 1
+
+
 class TestAI:
     async def test_ai_phishing_verdict_adds_score(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class StubAI:
