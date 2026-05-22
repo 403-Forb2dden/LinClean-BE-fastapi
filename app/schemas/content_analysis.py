@@ -9,6 +9,12 @@ class ContentSignal(StrEnum):
     BRAND_IMPERSONATION_FORM = "BRAND_IMPERSONATION_FORM"
     LOGO_ALT_IMPERSONATION = "LOGO_ALT_IMPERSONATION"
     CREDENTIAL_FORM_EXTERNAL = "CREDENTIAL_FORM_EXTERNAL"
+    PII_COLLECTION_FORM = "PII_COLLECTION_FORM"
+    SENSITIVE_ID_FIELD = "SENSITIVE_ID_FIELD"
+    FINANCIAL_FIELD = "FINANCIAL_FIELD"
+    RISKY_DOWNLOAD_LINK = "RISKY_DOWNLOAD_LINK"
+    PUBLIC_AGENCY_LURE = "PUBLIC_AGENCY_LURE"
+    KOREAN_LURE_TEXT = "KOREAN_LURE_TEXT"
     META_REFRESH = "META_REFRESH"
     EXTERNAL_META_REFRESH = "EXTERNAL_META_REFRESH"
     EXTERNAL_LINK_OVERUSE = "EXTERNAL_LINK_OVERUSE"
@@ -60,6 +66,13 @@ class ContentAnalysisResult(BaseModel):
     # JS 마운트 셸로 판단돼 정적 추출이 결정적이지 않은 상태. 여기서 has_password_field=False 는
     # "폼 없음" 이 아니라 "판정 불가" 로 읽어야 한다.
     is_spa_shell: bool = False
+    body_text_snippets: list[str] = Field(default_factory=list)
+    form_field_summaries: list[str] = Field(default_factory=list)
+    cta_texts: list[str] = Field(default_factory=list)
+    download_links: list[str] = Field(default_factory=list)
+    sensitive_field_types: list[str] = Field(default_factory=list)
+    korean_lure_keywords: list[str] = Field(default_factory=list)
+    public_agency_keywords: list[str] = Field(default_factory=list)
 
     ai_verdict: AIVerdict | None = None
     ai_reason: str | None = None
@@ -109,6 +122,13 @@ class ExtractedFeaturesView(BaseModel):
     external_link_ratio: float | None = None
     image_alts: list[str] = Field(default_factory=list)
     is_spa_shell: bool = False
+    body_text_snippets: list[str] = Field(default_factory=list)
+    form_field_summaries: list[str] = Field(default_factory=list)
+    cta_texts: list[str] = Field(default_factory=list)
+    download_links: list[str] = Field(default_factory=list)
+    sensitive_field_types: list[str] = Field(default_factory=list)
+    korean_lure_keywords: list[str] = Field(default_factory=list)
+    public_agency_keywords: list[str] = Field(default_factory=list)
 
 
 class FetchExtractResponse(BaseModel):
