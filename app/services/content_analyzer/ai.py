@@ -31,14 +31,6 @@ class AIPromptContext:
     # AI 가 페이지 피처 단독으로는 결론 내기 약한 케이스에 사전 정보로 활용한다.
     # 예: TYPO_DOMAIN + 브랜드 title + 비밀번호 폼이면 단독 페이지 분석보다 강한 phishing 신호.
     upstream_signals: tuple[str, ...] = ()
-    # HTML 원문 대신 비용이 낮은 구조화 요약만 전달한다.
-    body_text_snippets: tuple[str, ...] = ()
-    form_field_summaries: tuple[str, ...] = ()
-    cta_texts: tuple[str, ...] = ()
-    download_links: tuple[str, ...] = ()
-    sensitive_field_types: tuple[str, ...] = ()
-    korean_lure_keywords: tuple[str, ...] = ()
-    public_agency_keywords: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

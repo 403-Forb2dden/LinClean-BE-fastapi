@@ -63,7 +63,6 @@ class TestFetchExtractEndpoint:
         assert body["features"]["title"] == "NAVER"
         assert body["features"]["has_password_field"] is True
         assert body["features"]["image_alts"] == ["NAVER logo"]
-        assert body["features"]["form_field_summaries"]
         assert body["html_preview"] is not None
         assert "<title>NAVER</title>" in body["html_preview"]
 

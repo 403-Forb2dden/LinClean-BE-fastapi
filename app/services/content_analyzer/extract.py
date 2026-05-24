@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from bs4.element import Tag
 
 from app.core.config import settings
 
@@ -47,53 +46,6 @@ _MAX_IMAGE_ALTS = 200
 # 입력은 이미 캡 됐지만, 그 안에서도 노드를 압축적으로 쌓은 페이지(예: <a> 만 50만 개)에서
 # find_all 의 매칭 비용이 폭주하지 않도록 두 번째 방어선을 둔다.
 _MAX_NODES_PER_TAG = 1000
-_MAX_TEXT_SNIPPETS = 40
-_MAX_TEXT_CHARS = 180
-_MAX_FORM_FIELD_SUMMARIES = 80
-_MAX_CTA_TEXTS = 40
-_MAX_DOWNLOAD_LINKS = 40
-_RISKY_DOWNLOAD_EXTENSIONS: frozenset[str] = frozenset(
-    {".apk", ".ipa", ".exe", ".msi", ".dmg", ".scr", ".bat", ".cmd", ".js", ".vbs"}
-)
-
-_KOREAN_LURE_KEYWORDS: tuple[str, ...] = (
-    "지원금",
-    "환급금",
-    "택배",
-    "부고",
-    "청첩장",
-    "과태료",
-    "건강보험",
-    "정부기관",
-    "카카오톡",
-    "인증번호",
-    "otp",
-)
-
-_PUBLIC_AGENCY_KEYWORDS: tuple[str, ...] = (
-    "국민건강보험",
-    "건강보험공단",
-    "건강보험",
-    "정부24",
-    "정부",
-    "공단",
-    "국세청",
-    "관세청",
-    "경찰청",
-    "검찰청",
-    "고용노동부",
-    "보건복지부",
-    "행정안전부",
-)
-
-_SENSITIVE_FIELD_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("resident_registration_number", ("resident_registration", "rrn", "주민등록", "주민번호")),
-    ("phone", ("mobile", "phone", "tel", "휴대폰", "전화번호")),
-    ("card", ("card_number", "credit_card", "creditcard", "카드번호", "카드")),
-    ("cvc", ("cvc", "cvv")),
-    ("account", ("account", "bank", "계좌", "은행")),
-    ("otp", ("otp", "auth_code", "verification_code", "인증번호", "인증")),
-)
 
 
 @dataclass
@@ -106,13 +58,6 @@ class ExtractedFeatures:
     external_link_ratio: float | None = None
     image_alts: list[str] = field(default_factory=list)
     is_spa_shell: bool = False
-    body_text_snippets: list[str] = field(default_factory=list)
-    form_field_summaries: list[str] = field(default_factory=list)
-    cta_texts: list[str] = field(default_factory=list)
-    download_links: list[str] = field(default_factory=list)
-    sensitive_field_types: list[str] = field(default_factory=list)
-    korean_lure_keywords: list[str] = field(default_factory=list)
-    public_agency_keywords: list[str] = field(default_factory=list)
 
 
 def _normalize_host(host: str | None) -> str:
@@ -245,164 +190,9 @@ def _collect_image_alts(soup: BeautifulSoup) -> list[str]:
     return alts
 
 
-def _trim_text(text: str, *, max_chars: int = _MAX_TEXT_CHARS) -> str:
-    text = " ".join(text.split())
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip()
-
-
-def _append_unique(items: list[str], value: str, *, limit: int) -> None:
-    value = _trim_text(value)
-    if value and value not in items and len(items) < limit:
-        items.append(value)
-
-
-def _collect_body_text_snippets(soup: BeautifulSoup) -> list[str]:
-    snippets: list[str] = []
-    body = soup.body or soup
-    for text in body.stripped_strings:
-        _append_unique(snippets, text, limit=_MAX_TEXT_SNIPPETS)
-        if len(snippets) >= _MAX_TEXT_SNIPPETS:
-            break
-    return snippets
-
-
-def _label_texts_by_for(soup: BeautifulSoup) -> dict[str, str]:
-    labels: dict[str, str] = {}
-    for label in soup.find_all("label", limit=_MAX_NODES_PER_TAG):
-        if not isinstance(label, Tag):
-            continue
-        target = label.get("for")
-        if isinstance(target, str) and target.strip():
-            text = label.get_text(" ", strip=True)
-            if text:
-                labels[target.strip()] = _trim_text(text)
-    return labels
-
-
-def _attr_text(tag: Tag, name: str) -> str | None:
-    value = tag.get(name)
-    if isinstance(value, str):
-        value = _trim_text(value)
-        return value or None
-    return None
-
-
-def _field_label(control: Tag, labels_by_for: dict[str, str]) -> str | None:
-    control_id = _attr_text(control, "id")
-    if control_id and control_id in labels_by_for:
-        return labels_by_for[control_id]
-    parent_label = control.find_parent("label")
-    if isinstance(parent_label, Tag):
-        text = parent_label.get_text(" ", strip=True)
-        return _trim_text(text) if text else None
-    return None
-
-
-def _collect_form_field_summaries(soup: BeautifulSoup) -> list[str]:
-    labels_by_for = _label_texts_by_for(soup)
-    summaries: list[str] = []
-    for control in soup.find_all(["input", "textarea", "select"], limit=_MAX_NODES_PER_TAG):
-        if not isinstance(control, Tag):
-            continue
-        parts: list[str] = []
-        label = _field_label(control, labels_by_for)
-        if label:
-            parts.append(f"label={label}")
-        for attr in ("name", "type", "placeholder", "id", "title", "aria-label"):
-            value = _attr_text(control, attr)
-            if value:
-                parts.append(f"{attr}={value}")
-        if parts:
-            _append_unique(summaries, " ".join(parts), limit=_MAX_FORM_FIELD_SUMMARIES)
-        if len(summaries) >= _MAX_FORM_FIELD_SUMMARIES:
-            break
-    return summaries
-
-
-def _collect_cta_texts(soup: BeautifulSoup) -> list[str]:
-    texts: list[str] = []
-    for tag in soup.find_all(["button", "a", "input"], limit=_MAX_NODES_PER_TAG):
-        if not isinstance(tag, Tag):
-            continue
-        text: str | None = None
-        if tag.name == "input":
-            input_type = (_attr_text(tag, "type") or "").lower()
-            if input_type not in {"submit", "button", "reset"}:
-                continue
-            text = _attr_text(tag, "value")
-        else:
-            text = tag.get_text(" ", strip=True)
-        if text:
-            _append_unique(texts, text, limit=_MAX_CTA_TEXTS)
-        if len(texts) >= _MAX_CTA_TEXTS:
-            break
-    return texts
-
-
-def _is_risky_download_url(raw_url: str, base_url: str) -> str | None:
-    joined = urljoin(base_url, raw_url.strip())
-    parsed = urlparse(joined)
-    if parsed.scheme not in _NAV_SCHEMES:
-        return None
-    path = parsed.path.lower()
-    if any(path.endswith(ext) for ext in _RISKY_DOWNLOAD_EXTENSIONS):
-        return joined
-    return None
-
-
-def _collect_download_links(soup: BeautifulSoup, base_url: str) -> list[str]:
-    links: list[str] = []
-    for anchor in soup.find_all("a", limit=_MAX_NODES_PER_TAG):
-        href = anchor.get("href")
-        if not isinstance(href, str):
-            continue
-        resolved = _is_risky_download_url(href, base_url)
-        if resolved is not None:
-            _append_unique(links, resolved, limit=_MAX_DOWNLOAD_LINKS)
-        if len(links) >= _MAX_DOWNLOAD_LINKS:
-            break
-    return links
-
-
-def _collect_sensitive_field_types(form_field_summaries: list[str]) -> list[str]:
-    found: list[str] = []
-    haystack = "\n".join(form_field_summaries).lower()
-    for field_type, keywords in _SENSITIVE_FIELD_KEYWORDS:
-        if any(keyword.lower() in haystack for keyword in keywords):
-            found.append(field_type)
-    return found
-
-
-def _collect_keywords(texts: list[str], keywords: tuple[str, ...]) -> list[str]:
-    found: list[str] = []
-    haystack = "\n".join(texts).lower()
-    for keyword in keywords:
-        if keyword.lower() in haystack and keyword not in found:
-            found.append(keyword)
-    return found
-
-
 def extract_features(html: str, base_url: str) -> ExtractedFeatures:
     soup = BeautifulSoup(html or "", "lxml")
     has_meta_refresh, has_external_meta_refresh = _meta_refresh_info(soup, base_url)
-    body_text_snippets = _collect_body_text_snippets(soup)
-    form_field_summaries = _collect_form_field_summaries(soup)
-    cta_texts = _collect_cta_texts(soup)
-    image_alts = _collect_image_alts(soup)
-    download_links = _collect_download_links(soup, base_url)
-    keyword_texts = [
-        item
-        for item in [
-            _extract_title(soup) or "",
-            *body_text_snippets,
-            *form_field_summaries,
-            *cta_texts,
-            *image_alts,
-        ]
-        if item
-    ]
     return ExtractedFeatures(
         title=_extract_title(soup),
         has_password_field=_has_password_field(soup),
@@ -410,15 +200,8 @@ def extract_features(html: str, base_url: str) -> ExtractedFeatures:
         has_meta_refresh=has_meta_refresh,
         has_external_meta_refresh=has_external_meta_refresh,
         external_link_ratio=_compute_external_link_ratio(soup, base_url),
-        image_alts=image_alts,
+        image_alts=_collect_image_alts(soup),
         is_spa_shell=_detect_spa_shell(soup),
-        body_text_snippets=body_text_snippets,
-        form_field_summaries=form_field_summaries,
-        cta_texts=cta_texts,
-        download_links=download_links,
-        sensitive_field_types=_collect_sensitive_field_types(form_field_summaries),
-        korean_lure_keywords=_collect_keywords(keyword_texts, _KOREAN_LURE_KEYWORDS),
-        public_agency_keywords=_collect_keywords(keyword_texts, _PUBLIC_AGENCY_KEYWORDS),
     )
 
 

@@ -35,14 +35,7 @@ def _load_brands() -> list[tuple[str, str]]:
     return brands
 
 
-_BRANDS: list[tuple[str, str]] | None = None
-
-
-def _get_brands() -> list[tuple[str, str]]:
-    global _BRANDS
-    if _BRANDS is None:
-        _BRANDS = _load_brands()
-    return _BRANDS
+_BRANDS: list[tuple[str, str]] = _load_brands()
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -63,35 +56,6 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 _MIN_FUZZY_LEN = 5  # 4자 이하 브랜드는 편집거리 1~2 오탐이 심해 완전일치만 인정
-_SUSPICIOUS_SUFFIXES = frozenset(
-    {
-        "bid",
-        "cf",
-        "click",
-        "date",
-        "faith",
-        "ga",
-        "gq",
-        "link",
-        "loan",
-        "men",
-        "ml",
-        "mov",
-        "party",
-        "pw",
-        "racing",
-        "review",
-        "science",
-        "stream",
-        "surf",
-        "tk",
-        "top",
-        "trade",
-        "win",
-        "xyz",
-        "zip",
-    }
-)
 
 
 def check_typosquatting(url: str) -> DomainHeuristicSignal | None:
@@ -108,12 +72,9 @@ def check_typosquatting(url: str) -> DomainHeuristicSignal | None:
         return None
 
     is_typo = False
-    for brand_domain, brand_suffix in _get_brands():
+    for brand_domain, brand_suffix in _BRANDS:
         if target_domain == brand_domain and target_suffix == brand_suffix:
             return None  # 완전 일치 → 정상 도메인
-
-        if target_suffix != brand_suffix and target_suffix not in _SUSPICIOUS_SUFFIXES:
-            continue
 
         if abs(len(target_domain) - len(brand_domain)) > 2:
             continue  # 길이 차이가 2 초과면 거리가 반드시 2 초과 → 스킵

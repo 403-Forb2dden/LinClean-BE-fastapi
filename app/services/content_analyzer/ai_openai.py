@@ -49,9 +49,7 @@ _RESPONSE_FORMAT: dict[str, Any] = {
 _SYSTEM_PROMPT = (
     "당신은 웹 페이지 피싱 여부를 판정하는 보안 엔진이다. "
     "입력은 이미 크롤러가 뽑아놓은 구조화된 피처(title, 비밀번호 필드 유무, "
-    "meta refresh 유무, 외부 링크 비율, 이미지 alt 텍스트, 본문 요약, 폼 필드 요약, "
-    "CTA 문구, 다운로드 링크, 민감 입력 필드 후보, 한국형 루어 키워드, "
-    "최종 URL, spa_shell 플래그)와 "
+    "meta refresh 유무, 외부 링크 비율, 이미지 alt 텍스트, 최종 URL, spa_shell 플래그)와 "
     "선행 단계(도메인 휴리스틱·위협 DB)에서 이미 잡힌 시그널 코드 배열 upstream_signals 다. "
     "규칙 기반 점수는 이미 상위 레이어에서 계산되고 있으므로, 당신은 "
     "'이 페이지가 특정 브랜드를 사칭하거나 자격증명을 탈취하려 하는지' 를 "
@@ -85,13 +83,6 @@ def _build_user_prompt(ctx: AIPromptContext) -> str:
         "spa_shell": ctx.is_spa_shell,
         # 과도하게 긴 alt 리스트는 비용만 늘리고 판정에 도움 안 됨
         "image_alts": list(ctx.image_alts[:10]),
-        "body_text": list(ctx.body_text_snippets[:10]),
-        "form_fields": list(ctx.form_field_summaries[:20]),
-        "cta_texts": list(ctx.cta_texts[:10]),
-        "download_links": list(ctx.download_links[:10]),
-        "sensitive_field_types": list(ctx.sensitive_field_types),
-        "korean_lure_keywords": list(ctx.korean_lure_keywords),
-        "public_agency_keywords": list(ctx.public_agency_keywords),
         # 선행 단계 시그널 — 빈 배열이면 단독 페이지 분석과 동일.
         "upstream_signals": list(ctx.upstream_signals),
     }

@@ -7,7 +7,6 @@ import inspect
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from app.core.config import settings
 from app.schemas.content_analysis import ContentAnalysisResult
 from app.schemas.db_independent_pipeline import (
     DbIndependentPipelineFailure,
@@ -164,7 +163,7 @@ async def test_db_independent_pipeline_skips_content_when_heuristic_is_danger() 
 
 
 @pytest.mark.asyncio
-async def test_db_independent_pipeline_degrades_when_heuristic_fails() -> None:
+async def test_db_independent_pipeline_does_not_start_content_when_heuristic_fails() -> None:
     final_url = "https://error.example.com/login"
 
     async def _failing_heuristic(_: str) -> DomainHeuristicResult:
@@ -187,50 +186,11 @@ async def test_db_independent_pipeline_degrades_when_heuristic_fails() -> None:
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
-        mock_content.return_value = _make_content(final_url)
 
-        result = await run_db_independent_pipeline("aid-error-cleanup", final_url)
+        with pytest.raises(RuntimeError, match="heuristic failed"):
+            await run_db_independent_pipeline("aid-error-cleanup", final_url)
 
-    assert isinstance(result, DbIndependentPipelineSuccess)
-    assert result.stages.domain_heuristic.rdap_error == "pipeline_timeout"
-    mock_content.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_db_independent_pipeline_caps_content_stage_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    final_url = "https://slow-content.example.com/login"
-    monkeypatch.setattr(settings, "pipeline_content_timeout_seconds", 0.001)
-
-    async def _slow_content(_: str, **__: object) -> ContentAnalysisResult:
-        await asyncio.sleep(1)
-        return _make_content(final_url, score=90)
-
-    with (
-        patch("app.services.db_independent_pipeline.normalize_url") as mock_norm,
-        patch(
-            "app.services.db_independent_pipeline.unchain_url", new_callable=AsyncMock
-        ) as mock_unchain,
-        patch(
-            "app.services.db_independent_pipeline.check_domain_heuristic",
-            new_callable=AsyncMock,
-        ) as mock_heuristic,
-        patch(
-            "app.services.db_independent_pipeline.analyze_content",
-            new=AsyncMock(side_effect=_slow_content),
-        ),
-    ):
-        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
-        mock_unchain.return_value = _make_unchain(final_url)
-        mock_heuristic.return_value = _make_heuristic(0)
-
-        result = await run_db_independent_pipeline("aid-content-timeout", final_url)
-
-    assert isinstance(result, DbIndependentPipelineSuccess)
-    assert result.stages.content_analysis.error == "pipeline_timeout"
-    assert result.timings is not None
-    assert result.timings.total_seconds < 0.5
+    mock_content.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -82,19 +82,6 @@ class ContentScoring:
     logo_alt_impersonation: bool = False
 
 
-_SENSITIVE_ID_TYPES: frozenset[str] = frozenset({"resident_registration_number", "otp"})
-_PII_FIELD_TYPES: frozenset[str] = frozenset(
-    {"resident_registration_number", "phone", "otp"}
-)
-_FINANCIAL_FIELD_TYPES: frozenset[str] = frozenset({"card", "cvc", "account"})
-
-
-def _add_signal(result: ContentScoring, signal: ContentSignal, score: int = 0) -> None:
-    if signal not in result.signals:
-        result.signals.append(signal)
-    result.score += score
-
-
 def _url_brand_label(final_url: str) -> str:
     ext = extract_url_parts(final_url)
     return (ext.domain or "").lower()
@@ -136,60 +123,8 @@ def score_content(features: ExtractedFeatures, final_url: str) -> ContentScoring
             result.score += settings.score_weight_brand_impersonation
 
     if features.has_password_form_external_action:
-        _add_signal(
-            result,
-            ContentSignal.CREDENTIAL_FORM_EXTERNAL,
-            settings.score_weight_credential_form_external,
-        )
-
-    sensitive_types = set(features.sensitive_field_types)
-    has_pii_fields = bool(sensitive_types & _PII_FIELD_TYPES)
-    has_sensitive_id_fields = bool(sensitive_types & _SENSITIVE_ID_TYPES)
-    has_financial_fields = bool(sensitive_types & _FINANCIAL_FIELD_TYPES)
-    has_lure_text = bool(features.korean_lure_keywords)
-    has_public_agency_lure = bool(features.public_agency_keywords)
-
-    if has_lure_text:
-        _add_signal(result, ContentSignal.KOREAN_LURE_TEXT)
-
-    if has_public_agency_lure:
-        _add_signal(result, ContentSignal.PUBLIC_AGENCY_LURE)
-
-    if has_pii_fields:
-        _add_signal(
-            result,
-            ContentSignal.PII_COLLECTION_FORM,
-            settings.score_weight_pii_collection_form,
-        )
-
-    if has_sensitive_id_fields:
-        _add_signal(
-            result,
-            ContentSignal.SENSITIVE_ID_FIELD,
-            settings.score_weight_sensitive_id_field,
-        )
-
-    if has_financial_fields:
-        _add_signal(
-            result,
-            ContentSignal.FINANCIAL_FIELD,
-            settings.score_weight_financial_field,
-        )
-
-    if features.download_links:
-        _add_signal(
-            result,
-            ContentSignal.RISKY_DOWNLOAD_LINK,
-            settings.score_weight_risky_download_link,
-        )
-
-    # 루어/기관명은 단독 문구만으로 점수를 만들면 정상 안내 페이지 오탐이 커진다.
-    # 실제 입력 폼이나 위험 다운로드와 결합될 때만 추가 가중한다.
-    if has_lure_text and (has_pii_fields or has_financial_fields or features.download_links):
-        result.score += settings.score_weight_korean_lure
-
-    if has_public_agency_lure and has_pii_fields:
-        result.score += settings.score_weight_public_agency_lure
+        result.signals.append(ContentSignal.CREDENTIAL_FORM_EXTERNAL)
+        result.score += settings.score_weight_credential_form_external
 
     alt_brands: set[str] = set()
     for alt in features.image_alts:

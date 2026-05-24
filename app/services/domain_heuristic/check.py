@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -36,11 +35,6 @@ def _signal_scores() -> dict[DomainHeuristicSignal, int]:
         DomainHeuristicSignal.SUSPICIOUS_TLD: settings.score_weight_suspicious_tld,
         DomainHeuristicSignal.DGA_LIKE: settings.score_weight_dga_like,
         DomainHeuristicSignal.HOSTING_PLATFORM: settings.score_weight_hosting_platform,
-        DomainHeuristicSignal.URL_USERINFO: settings.score_weight_url_userinfo,
-        DomainHeuristicSignal.BRAND_IN_URL: settings.score_weight_brand_in_url,
-        DomainHeuristicSignal.FREE_HOSTING_LURE: settings.score_weight_free_hosting_lure,
-        DomainHeuristicSignal.SENSITIVE_PATH: settings.score_weight_sensitive_path,
-        DomainHeuristicSignal.URL_SHORTENER: settings.score_weight_url_shortener,
     }
 
 
@@ -77,19 +71,8 @@ async def check_domain_heuristic(url: str) -> DomainHeuristicResult:
             except Exception as exc:
                 logger.warning("domain_heuristic.typo_error", error=str(exc))
 
-        # RDAP은 보조 신호다. RDAP이 느려져도 앞에서 이미 잡은 URL 패턴/DGA/typo
-        # 신호를 잃지 않도록 내부 timeout으로 격리한다.
-        try:
-            timeout_seconds = min(
-                settings.rdap_timeout_seconds,
-                settings.pipeline_domain_timeout_seconds - 0.25,
-            )
-            rdap_info, rdap_error = await asyncio.wait_for(
-                lookup_rdap(url),
-                timeout=timeout_seconds,
-            )
-        except TimeoutError:
-            rdap_info, rdap_error = None, "timeout"
+        # lookup_rdap은 내부에서 모든 예외를 error_code로 변환하므로 재래핑 불필요
+        rdap_info, rdap_error = await lookup_rdap(url)
         if rdap_info and rdap_info.is_new_domain:
             signals.append(DomainHeuristicSignal.NEW_DOMAIN)
 

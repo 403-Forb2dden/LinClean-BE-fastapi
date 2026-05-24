@@ -31,14 +31,6 @@ from app.schemas.unchain import UnchainResult
 from app.services.content_analyzer import analyze_content, skipped_already_danger
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
-from app.services.pipeline_deadline import (
-    PipelineDeadline,
-    PipelineStageTimeoutError,
-    timed_out_content_result,
-    timed_out_domain_result,
-    timed_out_threat_db_result,
-    timed_out_unchain_result,
-)
 from app.services.threat_db import check_threat_db
 from app.services.unchainer import unchain_url
 
@@ -287,7 +279,6 @@ async def run_pipeline(
     log = logger.bind(analysis_id=analysis_id)
     log.info("pipeline.start", url=original_url)
     total_started = time.perf_counter()
-    deadline = PipelineDeadline()
     stage_timings = PipelineStageTimings()
 
     stage_started = time.perf_counter()
@@ -305,60 +296,17 @@ async def run_pipeline(
         )
     _set_stage_timing(stage_timings, PipelineStage.NORMALIZE, stage_started)
 
-    stage_started = time.perf_counter()
-    try:
-        unchain: UnchainResult = await deadline.run(
-            PipelineStage.UNCHAIN.value,
-            _timed_async_stage(
-                stage_timings,
-                PipelineStage.UNCHAIN,
-                unchain_url(
-                    norm.normalized_url,
-                    prefer_https_when_schemeless=norm.scheme_was_added,
-                ),
-            ),
-            settings.pipeline_unchain_timeout_seconds,
-        )
-    except PipelineStageTimeoutError:
-        log.warning("pipeline.stage_timeout", stage=PipelineStage.UNCHAIN)
-        unchain = timed_out_unchain_result(norm.normalized_url)
-        if stage_timings.unchain is None:
-            _set_stage_timing(stage_timings, PipelineStage.UNCHAIN, stage_started)
-    except Exception as exc:
-        log.warning(
-            "pipeline.stage_error",
-            stage=PipelineStage.UNCHAIN,
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        unchain = timed_out_unchain_result(norm.normalized_url, error="stage_error")
-        if stage_timings.unchain is None:
-            _set_stage_timing(stage_timings, PipelineStage.UNCHAIN, stage_started)
-
+    unchain: UnchainResult = await _timed_async_stage(
+        stage_timings,
+        PipelineStage.UNCHAIN,
+        unchain_url(norm.normalized_url, prefer_https_when_schemeless=norm.scheme_was_added),
+    )
     # 2·3단계는 둘 다 unchain.final_url 만 필요하고 서로 독립이라 병렬로 돈다.
     # threat_db 가 먼저 malicious 로 끝나면 verdict 가 이미 danger 로 확정이므로
     # heuristic 을 cancel 하고 4단계까지 skip — 여기서 조기 종료가 일어난다.
-    try:
-        threat, heuristic, short_circuited = await deadline.run(
-            "reputation",
-            _run_stage_2_and_3(log, unchain.final_url, session, stage_timings),
-            settings.pipeline_reputation_timeout_seconds,
-        )
-    except PipelineStageTimeoutError:
-        log.warning("pipeline.stage_timeout", stage="reputation")
-        threat = timed_out_threat_db_result(unchain.final_url)
-        heuristic = timed_out_domain_result(unchain.final_url)
-        short_circuited = False
-    except Exception as exc:
-        log.warning(
-            "pipeline.stage_error",
-            stage="reputation",
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        threat = timed_out_threat_db_result(unchain.final_url)
-        heuristic = timed_out_domain_result(unchain.final_url)
-        short_circuited = False
+    threat, heuristic, short_circuited = await _run_stage_2_and_3(
+        log, unchain.final_url, session, stage_timings
+    )
 
     if short_circuited:
         log.info(
@@ -385,27 +333,11 @@ async def run_pipeline(
             _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
         else:
             upstream = _collect_upstream_signals(threat, heuristic)
-            try:
-                content = await deadline.run(
-                    PipelineStage.CONTENT_ANALYSIS.value,
-                    _timed_async_stage(
-                        stage_timings,
-                        PipelineStage.CONTENT_ANALYSIS,
-                        _stage_content_analysis(log, unchain.final_url, upstream),
-                    ),
-                    settings.pipeline_content_timeout_seconds,
-                )
-            except PipelineStageTimeoutError:
-                log.warning("pipeline.stage_timeout", stage=PipelineStage.CONTENT_ANALYSIS)
-                content = timed_out_content_result(unchain.final_url)
-            except Exception as exc:
-                log.warning(
-                    "pipeline.stage_error",
-                    stage=PipelineStage.CONTENT_ANALYSIS,
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
-                content = timed_out_content_result(unchain.final_url)
+            content = await _timed_async_stage(
+                stage_timings,
+                PipelineStage.CONTENT_ANALYSIS,
+                _stage_content_analysis(log, unchain.final_url, upstream),
+            )
 
     score = _total_score(threat, heuristic, content)
     verdict = _decide_verdict(score, threat)

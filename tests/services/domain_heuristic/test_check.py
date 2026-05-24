@@ -21,14 +21,14 @@ async def test_ip_direct_url():
 
 @pytest.mark.asyncio
 async def test_score_accumulates():
-    # http + .xyz TLD → NO_HTTPS(20) + SUSPICIOUS_TLD(25) = 45
+    # http + .xyz TLD → NO_HTTPS(30) + SUSPICIOUS_TLD(20) = 50
     with patch(_RDAP_PATH, new_callable=AsyncMock) as mock_rdap:
         mock_rdap.return_value = (None, "not_found")
         result = await check_domain_heuristic("http://example.xyz/")
 
     assert DomainHeuristicSignal.NO_HTTPS in result.signals
     assert DomainHeuristicSignal.SUSPICIOUS_TLD in result.signals
-    assert result.score == 45
+    assert result.score == 50
 
 
 @pytest.mark.asyncio
@@ -41,28 +41,6 @@ async def test_rdap_failure_does_not_break_pipeline():
     assert result.rdap is None
     assert result.rdap_error == "timeout"
     assert DomainHeuristicSignal.NEW_DOMAIN not in result.signals
-
-
-@pytest.mark.asyncio
-async def test_rdap_timeout_preserves_pattern_signals(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def slow_rdap(_: str):
-        import asyncio
-
-        await asyncio.sleep(1)
-        return None, None
-
-    monkeypatch.setattr("app.services.domain_heuristic.check.lookup_rdap", slow_rdap)
-    monkeypatch.setattr("app.services.domain_heuristic.check.settings.rdap_timeout_seconds", 0.001)
-
-    result = await check_domain_heuristic("https://t-mobile.htufgk.top/pay/")
-
-    assert result.rdap_error == "timeout"
-    assert DomainHeuristicSignal.SUSPICIOUS_TLD in result.signals
-    assert DomainHeuristicSignal.SENSITIVE_PATH in result.signals
-    assert DomainHeuristicSignal.BRAND_IN_URL in result.signals
-    assert result.score >= 61
 
 
 @pytest.mark.asyncio

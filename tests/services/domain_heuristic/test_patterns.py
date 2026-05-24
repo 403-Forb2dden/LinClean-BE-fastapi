@@ -101,11 +101,6 @@ def test_hosting_platform_github_io() -> None:
     assert DomainHeuristicSignal.HOSTING_PLATFORM in signals
 
 
-def test_private_suffix_user_space_without_subdomain_is_hosting_platform() -> None:
-    signals = check_patterns("https://datrucsmain.wasmer.app/")
-    assert DomainHeuristicSignal.HOSTING_PLATFORM in signals
-
-
 def test_normal_domain_no_hosting_flag() -> None:
     signals = check_patterns("https://naver.com/")
     assert DomainHeuristicSignal.HOSTING_PLATFORM not in signals
@@ -115,56 +110,3 @@ def test_hosting_platform_root_not_flagged() -> None:
     # 플랫폼 자체 홈페이지는 HOSTING_PLATFORM 미발동
     signals = check_patterns("https://netlify.com/")
     assert DomainHeuristicSignal.HOSTING_PLATFORM not in signals
-
-
-def test_userinfo_is_high_risk_url_signal() -> None:
-    signals = check_patterns("https://google.com@evil-login.example.com/session")
-    assert DomainHeuristicSignal.URL_USERINFO in signals
-
-
-def test_brand_in_untrusted_url_is_signal() -> None:
-    signals = check_patterns("https://amazon-clone-kappa-ashen.vercel.app/login")
-    assert DomainHeuristicSignal.BRAND_IN_URL in signals
-    assert DomainHeuristicSignal.FREE_HOSTING_LURE in signals
-
-
-def test_shortener_is_signal() -> None:
-    signals = check_patterns("https://qrco.de/bgoz9a")
-    assert DomainHeuristicSignal.URL_SHORTENER in signals
-
-
-def test_trusted_brand_login_path_not_sensitive_path() -> None:
-    signals = check_patterns("https://naver.com/login")
-    assert DomainHeuristicSignal.SENSITIVE_PATH not in signals
-
-
-def test_generic_brand_labels_do_not_flag_public_normal_sites() -> None:
-    assert DomainHeuristicSignal.BRAND_IN_URL not in check_patterns("https://www.nasa.gov/")
-    assert DomainHeuristicSignal.BRAND_IN_URL not in check_patterns("https://apnews.com/")
-
-
-def test_openphish_like_brand_on_private_hosting_is_lure() -> None:
-    signals = check_patterns("https://www.findmyiphone.vercel.app/")
-    assert DomainHeuristicSignal.HOSTING_PLATFORM in signals
-    assert DomainHeuristicSignal.BRAND_IN_URL in signals
-    assert DomainHeuristicSignal.FREE_HOSTING_LURE in signals
-
-
-def test_sensitive_login_path_on_untrusted_domain_is_signal() -> None:
-    signals = check_patterns("https://www.driegang.nl/new-fr-societegenerale/sg/login/fr/login.php")
-    assert DomainHeuristicSignal.SENSITIVE_PATH in signals
-    assert DomainHeuristicSignal.BRAND_IN_URL in signals
-
-
-def test_tmobile_pay_on_suspicious_tld_is_high_signal() -> None:
-    signals = check_patterns("https://t-mobile.htufgk.top/pay/")
-    assert DomainHeuristicSignal.SUSPICIOUS_TLD in signals
-    assert DomainHeuristicSignal.SENSITIVE_PATH in signals
-    assert DomainHeuristicSignal.BRAND_IN_URL in signals
-
-
-def test_cfd_and_help_are_suspicious_tlds() -> None:
-    assert DomainHeuristicSignal.SUSPICIOUS_TLD in check_patterns("https://dpd.yzqpkmr.cfd/com/")
-    assert DomainHeuristicSignal.SUSPICIOUS_TLD in check_patterns(
-        "https://t-mobile.converselidom.help/pay/"
-    )
