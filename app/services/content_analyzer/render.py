@@ -34,12 +34,15 @@ class RenderResult:
 
 
 _render_semaphore: asyncio.Semaphore | None = None
+_render_semaphore_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_render_semaphore() -> asyncio.Semaphore:
-    global _render_semaphore
-    if _render_semaphore is None:
+    global _render_semaphore, _render_semaphore_loop
+    current_loop = asyncio.get_running_loop()
+    if _render_semaphore is None or _render_semaphore_loop is not current_loop:
         _render_semaphore = asyncio.Semaphore(settings.content_render_concurrency)
+        _render_semaphore_loop = current_loop
     return _render_semaphore
 
 
