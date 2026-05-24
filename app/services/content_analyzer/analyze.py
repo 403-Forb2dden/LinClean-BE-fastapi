@@ -22,6 +22,7 @@ from app.schemas.content_analysis import (
 from app.services.content_analyzer.ai import AIPromptContext, AIProvider, get_ai_provider
 from app.services.content_analyzer.extract import ExtractedFeatures, extract_features_async
 from app.services.content_analyzer.fetch import fetch_page
+from app.services.content_analyzer.render import render_page
 from app.services.content_analyzer.signals import ContentScoring, score_content
 
 logger = get_logger(__name__)
@@ -43,6 +44,13 @@ def _build_prompt_context(
         has_password_form_external_action=features.has_password_form_external_action,
         has_external_meta_refresh=features.has_external_meta_refresh,
         upstream_signals=upstream_signals,
+        body_text_snippets=tuple(features.body_text_snippets),
+        form_field_summaries=tuple(features.form_field_summaries),
+        cta_texts=tuple(features.cta_texts),
+        download_links=tuple(features.download_links),
+        sensitive_field_types=tuple(features.sensitive_field_types),
+        korean_lure_keywords=tuple(features.korean_lure_keywords),
+        public_agency_keywords=tuple(features.public_agency_keywords),
     )
 
 
@@ -53,6 +61,78 @@ def _ai_score_weight(verdict: AIVerdict) -> int:
     if verdict == AIVerdict.SUSPICIOUS:
         return settings.score_weight_ai_suspicious
     return 0
+
+
+def _unique_merge(left: list[str], right: list[str]) -> list[str]:
+    merged = list(left)
+    for item in right:
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _merge_features(static: ExtractedFeatures, rendered: ExtractedFeatures) -> ExtractedFeatures:
+    return ExtractedFeatures(
+        title=rendered.title or static.title,
+        has_password_field=static.has_password_field or rendered.has_password_field,
+        has_password_form_external_action=(
+            static.has_password_form_external_action
+            or rendered.has_password_form_external_action
+        ),
+        has_meta_refresh=static.has_meta_refresh or rendered.has_meta_refresh,
+        has_external_meta_refresh=(
+            static.has_external_meta_refresh or rendered.has_external_meta_refresh
+        ),
+        external_link_ratio=(
+            rendered.external_link_ratio
+            if rendered.external_link_ratio is not None
+            else static.external_link_ratio
+        ),
+        image_alts=_unique_merge(static.image_alts, rendered.image_alts),
+        is_spa_shell=rendered.is_spa_shell,
+        body_text_snippets=_unique_merge(
+            static.body_text_snippets,
+            rendered.body_text_snippets,
+        ),
+        form_field_summaries=_unique_merge(
+            static.form_field_summaries,
+            rendered.form_field_summaries,
+        ),
+        cta_texts=_unique_merge(static.cta_texts, rendered.cta_texts),
+        download_links=_unique_merge(static.download_links, rendered.download_links),
+        sensitive_field_types=_unique_merge(
+            static.sensitive_field_types,
+            rendered.sensitive_field_types,
+        ),
+        korean_lure_keywords=_unique_merge(
+            static.korean_lure_keywords,
+            rendered.korean_lure_keywords,
+        ),
+        public_agency_keywords=_unique_merge(
+            static.public_agency_keywords,
+            rendered.public_agency_keywords,
+        ),
+    )
+
+
+def _should_run_precision_analysis(
+    features: ExtractedFeatures,
+    scoring: ContentScoring,
+) -> bool:
+    if not settings.content_precision_enabled:
+        return False
+    if scoring.score >= settings.score_danger_threshold:
+        return False
+    if features.is_spa_shell:
+        return True
+    if scoring.score >= settings.content_precision_min_score:
+        return True
+    return bool(
+        features.download_links
+        or features.sensitive_field_types
+        or features.korean_lure_keywords
+        or features.public_agency_keywords
+    )
 
 
 # 정상 컨텐츠(이미지·PDF·대용량 정적 페이지) 또는 파이프라인 정합성 이슈(unchainer 가 놓친 3xx)는
@@ -150,6 +230,20 @@ async def analyze_content(
 
     features = await extract_features_async(fetch_result.html, base_url=final_url)
     scoring: ContentScoring = score_content(features, final_url)
+    precision_analysis_used = False
+    precision_analysis_error: str | None = None
+
+    if _should_run_precision_analysis(features, scoring):
+        precision_analysis_used = True
+        render_result = await render_page(final_url)
+        if render_result.ok:
+            rendered_features = await extract_features_async(render_result.html, base_url=final_url)
+            features = _merge_features(features, rendered_features)
+            scoring = score_content(features, final_url)
+            if ContentSignal.RENDERED_DOM_ANALYZED not in scoring.signals:
+                scoring.signals.append(ContentSignal.RENDERED_DOM_ANALYZED)
+        else:
+            precision_analysis_error = render_result.error
 
     ai_verdict: AIVerdict | None = None
     ai_reason: str | None = None
@@ -209,6 +303,15 @@ async def analyze_content(
         brand_impersonation=scoring.brand_impersonation,
         logo_alt_impersonation=scoring.logo_alt_impersonation,
         is_spa_shell=features.is_spa_shell,
+        body_text_snippets=features.body_text_snippets,
+        form_field_summaries=features.form_field_summaries,
+        cta_texts=features.cta_texts,
+        download_links=features.download_links,
+        sensitive_field_types=features.sensitive_field_types,
+        korean_lure_keywords=features.korean_lure_keywords,
+        public_agency_keywords=features.public_agency_keywords,
+        precision_analysis_used=precision_analysis_used,
+        precision_analysis_error=precision_analysis_error,
         ai_verdict=ai_verdict,
         ai_reason=ai_reason,
         ai_error=ai_error,

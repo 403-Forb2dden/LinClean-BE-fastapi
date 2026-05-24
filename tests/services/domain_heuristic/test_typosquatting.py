@@ -50,6 +50,12 @@ def test_distance_3_not_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_same_label_different_tld(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(typosquatting, "_BRANDS", [("naver", "com")])
     signal = check_typosquatting("https://naver.net/")
+    assert signal is None
+
+
+def test_same_label_suspicious_tld_still_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(typosquatting, "_BRANDS", [("naver", "com")])
+    signal = check_typosquatting("https://naver.xyz/")
     assert signal == DomainHeuristicSignal.TYPO_DOMAIN
 
 

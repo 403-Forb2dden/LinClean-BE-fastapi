@@ -223,10 +223,15 @@ async def lookup_rdap(url: str) -> tuple[RdapInfo | None, str | None]:
     _inflight[domain] = fut
     try:
         result = await _fetch_rdap(domain)
-        fut.set_result(result)
+        if not fut.done():
+            fut.set_result(result)
         return result
     except BaseException as exc:
-        fut.set_exception(exc)
+        if not fut.done():
+            fut.set_exception(exc)
+            # If the owner task is cancelled before another waiter consumes this future,
+            # retrieve the exception to avoid noisy "Future exception was never retrieved".
+            fut.add_done_callback(lambda done: done.exception())
         raise
     finally:
         _inflight.pop(domain, None)

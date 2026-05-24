@@ -201,6 +201,42 @@ async def test_openai_user_prompt_includes_upstream_signals() -> None:
     assert body["upstream_signals"] == ["TYPO_DOMAIN", "NEW_DOMAIN"]
 
 
+async def test_openai_user_prompt_includes_high_signal_structured_context() -> None:
+    client = _mock_http_client(
+        json.dumps({"verdict": "suspicious", "reason": "민감정보 입력 유도"})
+    )
+    ctx = AIPromptContext(
+        final_url="https://nhis-support.test/",
+        title="고유가 피해지원금 대상 조회",
+        has_password_field=False,
+        has_meta_refresh=False,
+        image_alts=(),
+        external_link_ratio=None,
+        body_text_snippets=("국민건강보험 고유가 피해지원금 지급대상 여부 조회",),
+        form_field_summaries=(
+            "label=주민등록번호 name=resident_registration_number placeholder=주민등록번호",
+        ),
+        cta_texts=("지원금 대상 조회하기",),
+        download_links=(),
+        sensitive_field_types=("resident_registration_number",),
+        korean_lure_keywords=("지원금",),
+        public_agency_keywords=("국민건강보험",),
+    )
+    with patch("app.services.content_analyzer.ai_openai.httpx.AsyncClient", return_value=client):
+        await OpenAIProvider().infer(ctx)
+
+    user_msg = client.post.await_args.kwargs["json"]["messages"][1]["content"]
+    body = json.loads(user_msg)
+    assert body["body_text"] == ["국민건강보험 고유가 피해지원금 지급대상 여부 조회"]
+    assert body["form_fields"] == [
+        "label=주민등록번호 name=resident_registration_number placeholder=주민등록번호"
+    ]
+    assert body["cta_texts"] == ["지원금 대상 조회하기"]
+    assert body["sensitive_field_types"] == ["resident_registration_number"]
+    assert body["korean_lure_keywords"] == ["지원금"]
+    assert body["public_agency_keywords"] == ["국민건강보험"]
+
+
 async def test_openai_user_prompt_omits_empty_upstream_signals() -> None:
     """기본값(빈 튜플)이면 빈 배열로 직렬화돼 단독 페이지 분석 모드와 동일하게 동작."""
     client = _mock_http_client(json.dumps({"verdict": "benign", "reason": "ok"}))

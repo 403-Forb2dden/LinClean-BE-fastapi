@@ -623,7 +623,7 @@ async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_does_not_start_content_when_stage_2_3_fails(
+async def test_run_pipeline_degrades_reputation_error_and_continues_to_content(
     async_session: AsyncSession,
 ) -> None:
     final_url = "https://error.test/"
@@ -644,8 +644,40 @@ async def test_run_pipeline_does_not_start_content_when_stage_2_3_fails(
     ):
         mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
+        mock_content.return_value = _make_content(final_url)
 
-        with pytest.raises(RuntimeError, match="threat db failed"):
-            await run_pipeline("aid-error-cleanup", final_url, async_session)
+        result = await run_pipeline("aid-error-cleanup", final_url, async_session)
 
-    mock_content.assert_not_awaited()
+    assert isinstance(result, PipelineSuccess)
+    assert result.stages.threat_db.gsb.error == "pipeline_timeout"
+    assert result.stages.domain_heuristic.rdap_error == "pipeline_timeout"
+    mock_content.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_degrades_content_error(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://content-error.test/"
+
+    async def failing_content(_url: str, **_kwargs: object) -> ContentAnalysisResult:
+        raise RuntimeError("content failed")
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", side_effect=failing_content),
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _heuristic_with_score(0)
+
+        result = await run_pipeline("aid-content-error", final_url, async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    assert result.stages.content_analysis.error == "pipeline_timeout"

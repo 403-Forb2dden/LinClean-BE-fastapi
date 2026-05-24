@@ -160,6 +160,74 @@ class TestExternalLinkRatio:
         assert features.external_link_ratio == 0.0
 
 
+class TestHighSignalStaticFeatures:
+    def test_extracts_body_text_form_fields_and_ctas(self) -> None:
+        html = """
+        <html>
+          <head><title>고유가 피해지원금 대상 조회</title></head>
+          <body>
+            <main>
+              <h1>국민건강보험 고유가 피해지원금 지급대상 여부 조회</h1>
+              <form action="https://example.invalid/pii">
+                <label for="rrn">주민등록번호</label>
+                <input id="rrn" name="resident_registration_number" placeholder="주민등록번호">
+                <label for="phone">휴대폰 번호</label>
+                <input id="phone" name="mobile_phone" placeholder="010-0000-0000">
+                <button type="button">지원금 대상 조회하기</button>
+              </form>
+            </main>
+          </body>
+        </html>
+        """
+
+        features = extract_features(html, base_url="https://nhis-support.test/")
+
+        assert any("고유가 피해지원금" in text for text in features.body_text_snippets)
+        assert any(
+            "resident_registration_number" in field
+            for field in features.form_field_summaries
+        )
+        assert any("주민등록번호" in field for field in features.form_field_summaries)
+        assert "지원금 대상 조회하기" in features.cta_texts
+        assert "resident_registration_number" in features.sensitive_field_types
+        assert "phone" in features.sensitive_field_types
+        assert "지원금" in features.korean_lure_keywords
+        assert "국민건강보험" in features.public_agency_keywords
+
+    def test_extracts_risky_download_links_and_lure_text(self) -> None:
+        html = """
+        <html>
+          <body>
+            <p>故 홍길동님의 모바일 부고장을 카카오톡으로 확인하세요.</p>
+            <a href="/downloads/kakaotalk.apk" download>카카오톡 최신버전 다운로드</a>
+            <a href="/notice.pdf">일반 안내문</a>
+          </body>
+        </html>
+        """
+
+        features = extract_features(html, base_url="https://obituary.test/")
+
+        assert features.download_links == ["https://obituary.test/downloads/kakaotalk.apk"]
+        assert "부고" in features.korean_lure_keywords
+        assert "카카오톡" in features.korean_lure_keywords
+        assert "카카오톡 최신버전 다운로드" in features.cta_texts
+
+    def test_extraction_caps_high_signal_lists(self) -> None:
+        inputs = "".join(
+            f'<label for="i{i}">휴대폰 번호 {i}</label>'
+            f'<input id="i{i}" name="mobile_phone_{i}" placeholder="휴대폰">'
+            for i in range(200)
+        )
+        links = "".join(f'<a href="/app-{i}.apk">download {i}</a>' for i in range(200))
+        html = f"<html><body><form>{inputs}</form>{links}</body></html>"
+
+        features = extract_features(html, base_url="https://x.test/")
+
+        assert len(features.form_field_summaries) <= 80
+        assert len(features.download_links) <= 40
+        assert len(features.body_text_snippets) <= 40
+
+
 class TestSpaShellDetection:
     def test_react_vite_shell_detected(self) -> None:
         html = (

@@ -25,6 +25,13 @@ from app.schemas.unchain import UnchainResult
 from app.services.content_analyzer import analyze_content, skipped_already_danger
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
+from app.services.pipeline_deadline import (
+    PipelineDeadline,
+    PipelineStageTimeoutError,
+    timed_out_content_result,
+    timed_out_domain_result,
+    timed_out_unchain_result,
+)
 from app.services.unchainer import unchain_url
 
 logger = structlog.get_logger(__name__)
@@ -100,6 +107,7 @@ async def run_db_independent_pipeline(
     log = logger.bind(analysis_id=analysis_id, pipeline="db_independent")
     log.info("db_independent_pipeline.start", url=original_url)
     total_started = time.perf_counter()
+    deadline = PipelineDeadline()
     stage_timings = PipelineStageTimings()
 
     stage_started = time.perf_counter()
@@ -118,14 +126,49 @@ async def run_db_independent_pipeline(
     _set_stage_timing(stage_timings, PipelineStage.NORMALIZE, stage_started)
 
     stage_started = time.perf_counter()
-    unchain = await unchain_url(
-        normalize.normalized_url,
-        prefer_https_when_schemeless=normalize.scheme_was_added,
-    )
+    try:
+        unchain = await deadline.run(
+            PipelineStage.UNCHAIN.value,
+            unchain_url(
+                normalize.normalized_url,
+                prefer_https_when_schemeless=normalize.scheme_was_added,
+            ),
+            settings.pipeline_unchain_timeout_seconds,
+        )
+    except PipelineStageTimeoutError:
+        log.warning("db_independent_pipeline.stage_timeout", stage=PipelineStage.UNCHAIN)
+        unchain = timed_out_unchain_result(normalize.normalized_url)
+    except Exception as exc:
+        log.warning(
+            "db_independent_pipeline.stage_error",
+            stage=PipelineStage.UNCHAIN,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        unchain = timed_out_unchain_result(normalize.normalized_url, error="stage_error")
     _set_stage_timing(stage_timings, PipelineStage.UNCHAIN, stage_started)
 
     stage_started = time.perf_counter()
-    heuristic = await check_domain_heuristic(unchain.final_url)
+    try:
+        heuristic = await deadline.run(
+            PipelineStage.DOMAIN_HEURISTIC.value,
+            check_domain_heuristic(unchain.final_url),
+            settings.pipeline_domain_timeout_seconds,
+        )
+    except PipelineStageTimeoutError:
+        log.warning(
+            "db_independent_pipeline.stage_timeout",
+            stage=PipelineStage.DOMAIN_HEURISTIC,
+        )
+        heuristic = timed_out_domain_result(unchain.final_url)
+    except Exception as exc:
+        log.warning(
+            "db_independent_pipeline.stage_error",
+            stage=PipelineStage.DOMAIN_HEURISTIC,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        heuristic = timed_out_domain_result(unchain.final_url)
     _set_stage_timing(stage_timings, PipelineStage.DOMAIN_HEURISTIC, stage_started)
 
     if heuristic.score >= settings.score_danger_threshold:
@@ -135,7 +178,26 @@ async def run_db_independent_pipeline(
     else:
         upstream = _collect_db_independent_signals(heuristic, unchain)
         stage_started = time.perf_counter()
-        content = await analyze_content(unchain.final_url, upstream_signals=upstream)
+        try:
+            content = await deadline.run(
+                PipelineStage.CONTENT_ANALYSIS.value,
+                analyze_content(unchain.final_url, upstream_signals=upstream),
+                settings.pipeline_content_timeout_seconds,
+            )
+        except PipelineStageTimeoutError:
+            log.warning(
+                "db_independent_pipeline.stage_timeout",
+                stage=PipelineStage.CONTENT_ANALYSIS,
+            )
+            content = timed_out_content_result(unchain.final_url)
+        except Exception as exc:
+            log.warning(
+                "db_independent_pipeline.stage_error",
+                stage=PipelineStage.CONTENT_ANALYSIS,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            content = timed_out_content_result(unchain.final_url)
         _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
 
     score = _total_score(heuristic, content)

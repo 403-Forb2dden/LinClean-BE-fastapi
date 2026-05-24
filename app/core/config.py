@@ -119,16 +119,21 @@ class Settings(BaseSettings):
 
     # 도메인 휴리스틱 점수
     score_weight_ip_direct: int = 40
-    score_weight_typo_domain: int = 40
+    score_weight_typo_domain: int = 30
     score_weight_punycode_idn: int = 35
-    score_weight_no_https: int = 30
-    score_weight_new_domain: int = 30
-    score_weight_subdomain_overuse: int = 25
-    score_weight_open_redirect_param: int = 20
+    score_weight_no_https: int = 20
+    score_weight_new_domain: int = 25
+    score_weight_subdomain_overuse: int = 20
+    score_weight_open_redirect_param: int = 30
     score_weight_hyphen_overuse: int = 20
-    score_weight_suspicious_tld: int = 20
-    score_weight_dga_like: int = 15
-    score_weight_hosting_platform: int = 15
+    score_weight_suspicious_tld: int = 25
+    score_weight_dga_like: int = 10
+    score_weight_hosting_platform: int = 20
+    score_weight_url_userinfo: int = 45
+    score_weight_brand_in_url: int = 30
+    score_weight_free_hosting_lure: int = 25
+    score_weight_sensitive_path: int = 20
+    score_weight_url_shortener: int = 25
 
     # 휴리스틱 점수 캡 — GSB/URLhaus(각 50) high-confidence 시그널을 합산이 압도하지 않도록 클램프
     domain_heuristic_score_cap: int = 80
@@ -145,8 +150,8 @@ class Settings(BaseSettings):
     domain_label_length_threshold: int = 20
 
     # 페이지 콘텐츠 정적 분석 (4단계)
-    content_fetch_timeout_seconds: float = 4.0
-    content_fetch_connect_timeout_seconds: float = 3.0
+    content_fetch_timeout_seconds: float = 3.5
+    content_fetch_connect_timeout_seconds: float = 2.0
     content_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MiB 이상이면 끊고 분석
     # DNS rebinding 잔여 위험은 앱 레벨 사전 해석만으로 완전히 닫을 수 없다. 운영에서 분석 전용
     # egress 프록시를 두는 경우 이 값으로 fetch 트래픽을 강제 경유시킨다.
@@ -175,19 +180,32 @@ class Settings(BaseSettings):
     # BS4 파싱은 입력 본문 대비 ~10배 메모리를 점유한다. FastAPI 동시성에 곱셈으로 폭주하는
     # 걸 막기 위해 추출 단계에 글로벌 세마포어를 둔다 — 동시성 N 이 와도 피크는 이 값 * per-page.
     content_extract_concurrency: int = 8
+    # 정확도 우선 slow path. 정적 HTML 로 판정이 애매하거나 SPA 셸인 경우에만 브라우저
+    # 렌더링 DOM 을 추가 분석한다. Playwright 미설치 환경에서는 degraded no-op.
+    content_precision_enabled: bool = True
+    content_precision_min_score: int = 20
+    content_render_timeout_seconds: float = 4.0
+    content_render_settle_ms: int = 500
+    content_render_concurrency: int = 2
 
     # 콘텐츠 분석 점수
     score_weight_brand_impersonation: int = 50
-    score_weight_logo_alt_impersonation: int = 30
+    score_weight_logo_alt_impersonation: int = 10
     score_weight_credential_form_external: int = 45
+    score_weight_pii_collection_form: int = 20
+    score_weight_sensitive_id_field: int = 30
+    score_weight_financial_field: int = 25
+    score_weight_risky_download_link: int = 20
+    score_weight_public_agency_lure: int = 20
+    score_weight_korean_lure: int = 15
     score_weight_meta_refresh: int = 20
     score_weight_external_meta_refresh: int = 25
-    score_weight_external_link_overuse: int = 15
+    score_weight_external_link_overuse: int = 5
     # 도달 실패(timeout/connect_error/HTTP 5xx 등)에 대한 보수적 가산.
     # not_html(이미지·PDF), too_large(대용량 정상 페이지), unexpected_redirect(unchainer 누락)는
     # 정상 컨텐츠 또는 파이프라인 정합성 문제로 보고 점수 가산 없이 시그널만 남긴다.
-    score_weight_content_fetch_failed: int = 10
-    score_weight_ai_phishing: int = 40
+    score_weight_content_fetch_failed: int = 15
+    score_weight_ai_phishing: int = 45
     score_weight_ai_suspicious: int = 20
     # 4단계 단독 캡 — 컨텐츠 분석 단계 안에서만 적용된다. 전 단계 합산은 별도로 score_total_cap 에서
     # 다시 100 으로 클램프되므로, 여기를 낮춰도 합산 상한이 자동으로 같이 낮아지는 게 아니다.
@@ -200,6 +218,14 @@ class Settings(BaseSettings):
     score_caution_threshold: int = 31
     # 단계별 점수 합산이 100 을 넘지 않도록 종합 점수에서 캡 적용.
     score_total_cap: int = 100
+
+    # 동기 분석 SLA. 단계별 작업은 이 총 예산 안에서만 실행되어 단일 요청이 20초를 넘기지
+    # 않도록 한다. 각 stage budget 은 외부 네트워크 timeout 이 순차 누적되는 것을 막기 위한 상한.
+    pipeline_total_timeout_seconds: float = 20.0
+    pipeline_unchain_timeout_seconds: float = 4.0
+    pipeline_reputation_timeout_seconds: float = 5.0
+    pipeline_domain_timeout_seconds: float = 4.0
+    pipeline_content_timeout_seconds: float = 8.0
 
     # 4단계 AI 프로바이더 선택.
     # auto   : OPENAI_API_KEY 있으면 OpenAIProvider, 없으면 NullAIProvider
