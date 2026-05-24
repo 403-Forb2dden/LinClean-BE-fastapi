@@ -9,20 +9,33 @@ def test_host_only_for_standard_domain() -> None:
     assert derive_keys("https://example.com/path/deep") == ["example.com"]
 
 
-def test_github_returns_host_path_and_host() -> None:
+def test_github_returns_host_path_only() -> None:
     keys = derive_keys("https://github.com/alice/repo/blob/main/x.exe")
-    assert keys == ["github.com/alice/repo", "github.com"]
+    assert keys == ["github.com/alice/repo"]
 
 
 def test_raw_githubusercontent() -> None:
     keys = derive_keys("https://raw.githubusercontent.com/alice/repo/main/x.sh")
-    assert keys[0] == "raw.githubusercontent.com/alice/repo"
-    assert keys[-1] == "raw.githubusercontent.com"
+    assert keys == ["raw.githubusercontent.com/alice/repo"]
 
 
-def test_github_short_path_fallbacks_to_host() -> None:
-    # path segment 가 2개 미만이면 host 만.
-    assert derive_keys("https://github.com/alice") == ["github.com"]
+def test_github_short_path_does_not_fallback_to_host() -> None:
+    # 다중 테넌트 호스트는 특정 사용자/리포 단위 이하로는 매칭하지 않는다.
+    assert derive_keys("https://github.com/alice") == []
+
+
+def test_dropbox_root_does_not_fallback_to_host() -> None:
+    assert derive_keys("https://www.dropbox.com/") == []
+
+
+def test_dropbox_shared_file_uses_path_prefix() -> None:
+    keys = derive_keys("https://www.dropbox.com/scl/fi/abc/report.exe?dl=0")
+    assert keys == ["www.dropbox.com/scl/fi"]
+
+
+def test_dropboxusercontent_download_host_uses_path_prefix() -> None:
+    keys = derive_keys("https://dl.dropboxusercontent.com/scl/fi/abc/report.exe")
+    assert keys == ["dl.dropboxusercontent.com/scl/fi"]
 
 
 def test_empty_host_returns_empty_list() -> None:

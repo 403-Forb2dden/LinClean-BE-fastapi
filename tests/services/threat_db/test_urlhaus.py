@@ -69,24 +69,40 @@ async def test_host_path_match_github(async_session: AsyncSession) -> None:
     assert result.matched_key == "github.com/bad/repo"
 
 
-async def test_host_path_preferred_over_host(async_session: AsyncSession) -> None:
-    # 같은 호스트에 host 키와 host_path 키가 모두 있으면 host_path 우선.
+async def test_multitenant_host_does_not_match_host_only_entry(
+    async_session: AsyncSession,
+) -> None:
     await _seed(
         async_session,
-        id=4,
-        url="https://github.com/foo",
-        host="github.com",
-        match_key="github.com",
+        id=6,
+        url="https://www.dropbox.com/scl/fi/bad/payload.exe",
+        host="www.dropbox.com",
+        match_key="www.dropbox.com",
     )
+
+    result = await check_urlhaus(async_session, "https://www.dropbox.com/")
+
+    assert result.checked is True
+    assert result.is_threat is False
+
+
+async def test_multitenant_host_path_match_dropbox(async_session: AsyncSession) -> None:
     await _seed(
         async_session,
-        id=5,
-        url="https://github.com/bad/repo/a",
-        host="github.com",
-        match_key="github.com/bad/repo",
+        id=7,
+        url="https://www.dropbox.com/scl/fi/bad/payload.exe",
+        host="www.dropbox.com",
+        match_key="www.dropbox.com/scl/fi",
     )
-    result = await check_urlhaus(async_session, "https://github.com/bad/repo/anything")
+
+    result = await check_urlhaus(
+        async_session,
+        "https://www.dropbox.com/scl/fi/bad/readme.txt",
+    )
+
+    assert result.is_threat is True
     assert result.match_type == "host_path"
+    assert result.matched_key == "www.dropbox.com/scl/fi"
 
 
 async def test_no_match(async_session: AsyncSession) -> None:

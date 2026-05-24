@@ -74,6 +74,11 @@ class Settings(BaseSettings):
             "gitlab.com": 2,
             "bitbucket.org": 2,
             "sites.google.com": 2,
+            "dropbox.com": 2,
+            "www.dropbox.com": 2,
+            "dropboxusercontent.com": 2,
+            "dl.dropboxusercontent.com": 2,
+            "www.dropboxusercontent.com": 2,
         }
     )
 
