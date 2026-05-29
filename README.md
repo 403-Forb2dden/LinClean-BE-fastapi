@@ -267,18 +267,3 @@ Spring 성공 콜백은 camelCase로 전송합니다.
   "elapsedMs": 1234
 }
 ```
-
-로컬 실행:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-make run
-```
-
-전체 테스트:
-
-```bash
-pytest -q
-```
