@@ -129,10 +129,11 @@ class Settings(BaseSettings):
     score_weight_no_https: int = 20
     score_weight_new_domain: int = 25
     score_weight_subdomain_overuse: int = 20
-    score_weight_open_redirect_param: int = 30
+    score_weight_open_redirect_param: int = 31
     score_weight_hyphen_overuse: int = 20
     score_weight_suspicious_tld: int = 25
-    score_weight_dga_like: int = 10
+    score_weight_dga_like: int = 31
+    score_weight_redirect_cross_origin: int = 15
     score_weight_hosting_platform: int = 20
     score_weight_url_userinfo: int = 45
     score_weight_brand_in_url: int = 30
@@ -211,7 +212,7 @@ class Settings(BaseSettings):
     # 정상 컨텐츠 또는 파이프라인 정합성 문제로 보고 점수 가산 없이 시그널만 남긴다.
     score_weight_content_fetch_failed: int = 15
     score_weight_ai_phishing: int = 45
-    score_weight_ai_suspicious: int = 20
+    score_weight_ai_suspicious: int = 31
     # 4단계 단독 캡 — 컨텐츠 분석 단계 안에서만 적용된다. 전 단계 합산은 별도로 score_total_cap 에서
     # 다시 100 으로 클램프되므로, 여기를 낮춰도 합산 상한이 자동으로 같이 낮아지는 게 아니다.
     content_analysis_score_cap: int = 100

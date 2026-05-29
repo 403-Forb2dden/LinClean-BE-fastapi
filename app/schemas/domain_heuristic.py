@@ -32,6 +32,7 @@ class DomainHeuristicSignal(StrEnum):
     FREE_HOSTING_LURE = "FREE_HOSTING_LURE"
     SENSITIVE_PATH = "SENSITIVE_PATH"
     URL_SHORTENER = "URL_SHORTENER"
+    REDIRECT_CROSS_ORIGIN = "REDIRECT_CROSS_ORIGIN"
 
 
 class DomainHeuristicSkippedReason(StrEnum):

@@ -24,34 +24,81 @@ def _merge_threat_types(gsb: GSBResult, urlhaus: URLhausResult) -> list[str]:
     return seen
 
 
-async def check_threat_db(session: AsyncSession, final_url: str) -> ThreatDbResult:
+def _candidate_urls(final_url: str, original_url: str | None) -> list[str]:
+    candidates = [final_url]
+    if original_url and original_url != final_url:
+        candidates.append(original_url)
+    return candidates
+
+
+def _merge_gsb(results: list[GSBResult]) -> GSBResult:
+    checked = any(result.checked for result in results)
+    matches: list = []
+    error = None
+    for result in results:
+        if result.matches:
+            matches.extend(result.matches)
+        if error is None and result.error:
+            error = result.error
+    return GSBResult(
+        checked=checked,
+        is_threat=bool(matches),
+        matches=matches,
+        error=None if checked else error,
+    )
+
+
+def _merge_urlhaus(results: list[URLhausResult]) -> URLhausResult:
+    for result in results:
+        if result.is_threat:
+            return result
+    checked = any(result.checked for result in results)
+    error = next((result.error for result in results if result.error), None)
+    return URLhausResult(checked=checked, is_threat=False, error=None if checked else error)
+
+
+async def check_threat_db(
+    session: AsyncSession,
+    final_url: str,
+    *,
+    original_url: str | None = None,
+) -> ThreatDbResult:
     """final_url 을 GSB + URLhaus 와 병렬 대조해 판정 결과 반환.
 
     어느 한쪽이 실패해도 다른 쪽 결과로 판정한다. 두 쪽 다 실패 시
     is_malicious=False, sources_checked=0 로 반환하여 상위 레이어가 보수적으로 처리.
     """
-    gsb_task = check_gsb(final_url)
-    urlhaus_task = check_urlhaus(session, final_url)
+    candidates = _candidate_urls(final_url, original_url)
+    gsb_tasks = [check_gsb(url) for url in candidates]
+    urlhaus_tasks = [check_urlhaus(session, url) for url in candidates]
 
-    gsb_raw, urlhaus_raw = await asyncio.gather(gsb_task, urlhaus_task, return_exceptions=True)
+    raw_results = await asyncio.gather(*gsb_tasks, *urlhaus_tasks, return_exceptions=True)
 
     # CancelledError 는 상위 task 의 취소 신호이므로 절대 삼키지 않는다.
     # (shutdown / 요청 timeout 시 degraded 결과를 영속화하는 사고 방지)
-    for raw in (gsb_raw, urlhaus_raw):
+    for raw in raw_results:
         if isinstance(raw, asyncio.CancelledError):
             raise raw
 
-    if isinstance(gsb_raw, BaseException):
-        logger.warning("threat_db.gsb_unexpected", error=str(gsb_raw))
-        gsb = GSBResult(checked=False, is_threat=False, error="unexpected")
-    else:
-        gsb = gsb_raw
+    gsb_results: list[GSBResult] = []
+    urlhaus_results: list[URLhausResult] = []
+    for raw in raw_results[: len(candidates)]:
+        if isinstance(raw, BaseException):
+            logger.warning("threat_db.gsb_unexpected", error=str(raw))
+            gsb_results.append(GSBResult(checked=False, is_threat=False, error="unexpected"))
+        else:
+            gsb_results.append(raw)
+    for raw in raw_results[len(candidates) :]:
+        if isinstance(raw, BaseException):
+            logger.warning("threat_db.urlhaus_unexpected", error=str(raw))
+            urlhaus_results.append(
+                URLhausResult(checked=False, is_threat=False, error="unexpected")
+            )
+        else:
+            urlhaus_results.append(raw)
 
-    if isinstance(urlhaus_raw, BaseException):
-        logger.warning("threat_db.urlhaus_unexpected", error=str(urlhaus_raw))
-        urlhaus = URLhausResult(checked=False, is_threat=False, error="unexpected")
-    else:
-        urlhaus = urlhaus_raw
+    gsb = _merge_gsb(gsb_results)
+    urlhaus = _merge_urlhaus(urlhaus_results)
 
     is_malicious = gsb.is_threat or urlhaus.is_threat
     sources_checked = sum((gsb.checked, urlhaus.checked))

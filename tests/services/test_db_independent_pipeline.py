@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.core.config import settings
-from app.schemas.content_analysis import ContentAnalysisResult
+from app.schemas.content_analysis import ContentAnalysisResult, ContentSignal
 from app.schemas.db_independent_pipeline import (
     DbIndependentPipelineFailure,
     DbIndependentPipelineSuccess,
@@ -109,8 +109,9 @@ async def test_db_independent_pipeline_passes_url_and_redirect_signals_to_conten
         mock_heuristic.return_value = _make_heuristic(15)
         mock_content.return_value = _make_content(final_url)
 
-        await run_db_independent_pipeline("aid-sig", "https://short.test/a")
+        result = await run_db_independent_pipeline("aid-sig", "https://short.test/a")
 
+    assert isinstance(result, DbIndependentPipelineSuccess)
     mock_content.assert_awaited_once()
     args, kwargs = mock_content.await_args
     assert args == (final_url,)
@@ -121,11 +122,13 @@ async def test_db_independent_pipeline_passes_url_and_redirect_signals_to_conten
         "HOSTING_PLATFORM",
         "REDIRECT_CROSS_ORIGIN",
     )
+    assert DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN in result.stages.domain_heuristic.signals
+    assert result.stages.domain_heuristic.score > 15
     assert "provider" not in kwargs
 
 
 @pytest.mark.asyncio
-async def test_db_independent_pipeline_skips_content_when_heuristic_is_danger() -> None:
+async def test_db_independent_pipeline_checks_content_when_heuristic_is_danger() -> None:
     final_url = "https://danger.example.com/login"
     content_started = asyncio.Event()
 
@@ -157,9 +160,86 @@ async def test_db_independent_pipeline_skips_content_when_heuristic_is_danger() 
         result = await run_db_independent_pipeline("aid-parallel", final_url)
 
     assert isinstance(result, DbIndependentPipelineSuccess)
-    assert result.score == 65
-    assert result.stages.content_analysis.error == "skipped_already_danger"
-    assert content_started.is_set() is False
+    assert result.score == 85
+    assert result.verdict == Verdict.DANGER
+    assert result.stages.content_analysis.fetched is True
+    assert content_started.is_set() is True
+    mock_content.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_db_independent_pipeline_returns_failure_when_page_unavailable() -> None:
+    final_url = "https://missing.example.com/"
+
+    with (
+        patch("app.services.db_independent_pipeline.normalize_url") as mock_norm,
+        patch(
+            "app.services.db_independent_pipeline.unchain_url", new_callable=AsyncMock
+        ) as mock_unchain,
+        patch(
+            "app.services.db_independent_pipeline.check_domain_heuristic",
+            new_callable=AsyncMock,
+        ) as mock_heuristic,
+        patch(
+            "app.services.db_independent_pipeline.analyze_content", new_callable=AsyncMock
+        ) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_heuristic.return_value = _make_heuristic(0)
+        mock_content.return_value = ContentAnalysisResult(
+            final_url=final_url,
+            fetched=False,
+            status_code=404,
+            score=0,
+            signals=[ContentSignal.FETCH_FAILED],
+            reason="페이지를 찾을 수 없습니다.",
+            error="http_error_404",
+        )
+
+        result = await run_db_independent_pipeline("aid-missing", final_url)
+
+    assert isinstance(result, DbIndependentPipelineFailure)
+    assert result.failed_at_stage == PipelineStage.CONTENT_ANALYSIS
+    assert result.error_code == "PAGE_UNAVAILABLE"
+    assert result.final_url == final_url
+    assert result.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_db_independent_pipeline_returns_verdict_when_unavailable_url_signal_is_strong() -> None:
+    final_url = "http://xj3kq9vbnm2p7zla.com/login"
+    unchain = _make_unchain(final_url)
+    unchain.error = "dns_failure"
+
+    with (
+        patch("app.services.db_independent_pipeline.normalize_url") as mock_norm,
+        patch(
+            "app.services.db_independent_pipeline.unchain_url", new_callable=AsyncMock
+        ) as mock_unchain,
+        patch(
+            "app.services.db_independent_pipeline.check_domain_heuristic",
+            new_callable=AsyncMock,
+        ) as mock_heuristic,
+        patch(
+            "app.services.db_independent_pipeline.analyze_content", new_callable=AsyncMock
+        ) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = unchain
+        mock_heuristic.return_value = DomainHeuristicResult(
+            domain="xj3kq9vbnm2p7zla.com",
+            score=settings.score_caution_threshold,
+            signals=[DomainHeuristicSignal.DGA_LIKE],
+        )
+
+        result = await run_db_independent_pipeline("aid-unavailable-url-signal", final_url)
+
+    assert isinstance(result, DbIndependentPipelineSuccess)
+    assert result.verdict == Verdict.CAUTION
+    assert result.score == settings.score_caution_threshold
+    assert result.stages.content_analysis.fetched is False
+    assert result.stages.content_analysis.error == "page_unavailable"
     mock_content.assert_not_awaited()
 
 

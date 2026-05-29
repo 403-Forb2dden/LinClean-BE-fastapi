@@ -41,6 +41,24 @@ async def test_exact_url_match(async_session: AsyncSession) -> None:
     assert result.tags == ["exe", "emotet"]
 
 
+async def test_exact_url_match_tolerates_scheme_and_trailing_slash_variants(
+    async_session: AsyncSession,
+) -> None:
+    await _seed(
+        async_session,
+        id=11,
+        url="http://evil.test/login",
+        host="evil.test",
+        match_key="evil.test",
+    )
+
+    result = await check_urlhaus(async_session, "https://evil.test/login/")
+
+    assert result.is_threat is True
+    assert result.match_type == "url"
+    assert result.matched_key == "http://evil.test/login"
+
+
 async def test_host_match(async_session: AsyncSession) -> None:
     await _seed(
         async_session,

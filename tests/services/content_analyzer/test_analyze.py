@@ -225,6 +225,7 @@ class TestAI:
 
         assert result.ai_verdict == AIVerdict.SUSPICIOUS
         assert result.score == settings.score_weight_ai_suspicious
+        assert result.score >= settings.score_caution_threshold
 
     async def test_ai_benign_verdict_no_score(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class StubAI:
