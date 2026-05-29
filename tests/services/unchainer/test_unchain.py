@@ -278,6 +278,20 @@ class TestCrossOrigin:
         assert any(s.startswith("cross_origin:") for s in result.signals)
         assert "cross_origin:safe.com->evil.com" in result.signals
 
+    @pytest.mark.asyncio
+    async def test_same_registered_domain_redirect_is_not_cross_origin(self) -> None:
+        responses = [
+            _make_response(301, {"location": "https://github.com/"}),
+            _make_response(200),
+        ]
+        client = _mock_client(responses)
+
+        with patch(_PATCH_TARGET, return_value=client):
+            result = await unchain_url("https://www.github.com/")
+
+        assert not any(s.startswith("cross_origin:") for s in result.signals)
+        assert result.final_url == "https://github.com/"
+
 
 class TestRelativeLocation:
     """상대 경로 Location 해석."""

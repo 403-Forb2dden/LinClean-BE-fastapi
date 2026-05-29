@@ -34,7 +34,10 @@ _VERDICT_SCHEMA: dict[str, Any] = {
                 "type": "string",
                 "enum": [v.value for v in AIVerdict],
             },
-            "reason": {"type": "string"},
+            "reason": {
+                "type": "string",
+                "description": "Korean analysis reason plus user action guidance, within 100 chars.",
+            },
         },
         "required": ["verdict", "reason"],
         "additionalProperties": False,
@@ -67,7 +70,9 @@ _SYSTEM_PROMPT = (
     "보수적으로 선택한다. "
     "verdict 는 phishing / suspicious / benign 중 하나. reason 은 보안 전문가처럼 "
     "근거 중심으로 쓰되, IT와 보안을 모르는 사람도 이해할 수 있는 쉬운 한국어 100자 이내 "
-    "1문장으로 작성한다. "
+    "1문장으로 작성한다. reason 에는 별도 필드 없이 분석 근거와 사용자 행동 가이드를 함께 "
+    "담아라. 예: 비밀번호 입력에 주의하세요, 결제 수단을 등록하지 마세요, 첨부 파일을 "
+    "내려받지 마세요. "
     "확증이 없으면 benign 또는 suspicious 를 쓰고 phishing 은 보수적으로만 사용한다."
 )
 

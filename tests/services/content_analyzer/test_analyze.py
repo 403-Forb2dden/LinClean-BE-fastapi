@@ -227,6 +227,43 @@ class TestAI:
         assert result.score == settings.score_weight_ai_suspicious
         assert result.score >= settings.score_caution_threshold
 
+    async def test_ai_suspicious_on_trusted_clean_domain_does_not_score(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class StubAI:
+            async def infer(self, ctx: AIPromptContext) -> AIInference:
+                return AIInference(verdict=AIVerdict.SUSPICIOUS, reason="mild")
+
+        monkeypatch.setattr(
+            "app.services.content_analyzer.analyze.get_ai_provider",
+            lambda: StubAI(),
+        )
+        with _mock_fetch(ok=True, html="<html><title>Reddit</title></html>"):
+            result = await analyze_content("https://www.reddit.com/")
+
+        assert result.ai_verdict == AIVerdict.SUSPICIOUS
+        assert result.score == 0
+
+    @pytest.mark.parametrize("url", ["https://www.lg.co.kr/", "https://www.python.org/"])
+    async def test_ai_suspicious_on_trusted_redirect_target_does_not_score(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        url: str,
+    ) -> None:
+        class StubAI:
+            async def infer(self, ctx: AIPromptContext) -> AIInference:
+                return AIInference(verdict=AIVerdict.SUSPICIOUS, reason="mild")
+
+        monkeypatch.setattr(
+            "app.services.content_analyzer.analyze.get_ai_provider",
+            lambda: StubAI(),
+        )
+        with _mock_fetch(ok=True, html="<html><title>Trusted</title></html>"):
+            result = await analyze_content(url)
+
+        assert result.ai_verdict == AIVerdict.SUSPICIOUS
+        assert result.score == 0
+
     async def test_ai_benign_verdict_no_score(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class StubAI:
             async def infer(self, ctx: AIPromptContext) -> AIInference:

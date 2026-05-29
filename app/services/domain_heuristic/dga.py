@@ -5,6 +5,7 @@ import math
 from app.core.config import settings
 from app.core.tld import extract_url_parts
 from app.schemas.domain_heuristic import DomainHeuristicSignal
+from app.services.domain_heuristic.patterns import is_trusted_registered_domain
 
 _CONSONANTS = frozenset("bcdfghjklmnpqrstvwxyz")
 
@@ -31,6 +32,9 @@ def _consonant_ratio(s: str) -> float:
 
 
 def check_dga(url: str) -> DomainHeuristicSignal | None:
+    if is_trusted_registered_domain(url):
+        return None
+
     ext = extract_url_parts(url)
     label = ext.domain  # 등록 도메인 레이블
     if not label or len(label) < _MIN_DGA_LABEL_LEN:

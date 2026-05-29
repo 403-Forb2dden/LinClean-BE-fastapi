@@ -18,6 +18,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.dns_cache import resolve_host_addrs
+from app.core.tld import extract_url_parts
 from app.schemas.analysis import HopRecord, UnchainResult
 
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
@@ -95,6 +96,17 @@ def _https_variant(url: str) -> str | None:
     if parsed.scheme != "http" or not parsed.hostname:
         return None
     return urlunparse(parsed._replace(scheme="https"))
+
+
+def _registered_domain_from_host(host: str | None) -> str:
+    if not host:
+        return ""
+    ext = extract_url_parts(f"https://{host.strip('[]')}/")
+    return (ext.top_domain_under_public_suffix or host).lower()
+
+
+def _is_registered_domain_change(left_host: str | None, right_host: str | None) -> bool:
+    return _registered_domain_from_host(left_host) != _registered_domain_from_host(right_host)
 
 
 def _is_analyzable_html_response(resp: httpx.Response) -> bool:
@@ -311,8 +323,8 @@ async def _follow_one_hop(
             if parsed_url.scheme == "https" and parsed_next.scheme == "http":
                 signals.append("scheme_downgrade")
 
-            # 크로스 오리진 호스트 변화
-            if parsed_url.hostname != parsed_next.hostname:
+            # 등록 도메인 변화. www → bare 같은 정상 canonical redirect 는 제외한다.
+            if _is_registered_domain_change(parsed_url.hostname, parsed_next.hostname):
                 signals.append(f"cross_origin:{parsed_url.hostname}->{parsed_next.hostname}")
 
             return hop, next_url, None
