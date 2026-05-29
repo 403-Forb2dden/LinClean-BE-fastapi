@@ -297,3 +297,43 @@ async def test_posts_failure_callback_payload(monkeypatch: pytest.MonkeyPatch) -
     }
     assert "timings" not in payload
     assert "stages" not in payload
+
+
+@pytest.mark.asyncio
+async def test_posts_page_unavailable_callback_without_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "spring_internal_url", "http://spring.internal")
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.post.return_value = httpx.Response(200)
+    result = PipelineFailure(
+        analysis_id="aid-missing",
+        original_url="https://missing.test/",
+        final_url="https://missing.test/",
+        failed_at_stage=PipelineStage.CONTENT_ANALYSIS,
+        error="페이지를 찾을 수 없습니다.",
+        error_code="PAGE_UNAVAILABLE",
+        status_code=404,
+    )
+
+    with patch("app.services.analysis_callback.httpx.AsyncClient", return_value=mock_client):
+        delivered = await post_analysis_callback(
+            result,
+            request_id="rid-missing",
+            elapsed_ms=17,
+            analyzed_at=datetime(2026, 4, 7, 5, 43, 41, tzinfo=UTC),
+        )
+
+    assert delivered is True
+    payload = mock_client.post.await_args.kwargs["json"]
+    assert payload["status"] == "failed"
+    assert payload["finalUrl"] == "https://missing.test/"
+    assert payload["error"] == {
+        "code": "PAGE_UNAVAILABLE",
+        "stage": 4,
+        "message": "페이지를 찾을 수 없습니다.",
+        "statusCode": 404,
+    }
+    assert "verdict" not in payload
+    assert "score" not in payload

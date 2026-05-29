@@ -8,6 +8,7 @@ Playwright 가 설치되지 않았거나 브라우저 실행에 실패하면 deg
 from __future__ import annotations
 
 import asyncio
+import weakref
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -34,15 +35,16 @@ class RenderResult:
 
 
 _render_semaphore: asyncio.Semaphore | None = None
-_render_semaphore_loop: asyncio.AbstractEventLoop | None = None
+_render_semaphore_loop_ref: weakref.ReferenceType[asyncio.AbstractEventLoop] | None = None
 
 
 def _get_render_semaphore() -> asyncio.Semaphore:
-    global _render_semaphore, _render_semaphore_loop
+    global _render_semaphore, _render_semaphore_loop_ref
     current_loop = asyncio.get_running_loop()
-    if _render_semaphore is None or _render_semaphore_loop is not current_loop:
+    stored_loop = _render_semaphore_loop_ref() if _render_semaphore_loop_ref else None
+    if _render_semaphore is None or stored_loop is not current_loop:
         _render_semaphore = asyncio.Semaphore(settings.content_render_concurrency)
-        _render_semaphore_loop = current_loop
+        _render_semaphore_loop_ref = weakref.ref(current_loop)
     return _render_semaphore
 
 

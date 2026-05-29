@@ -76,8 +76,11 @@ class PipelineFailure(BaseModel):
     status: Literal["failed"] = "failed"
     analysis_id: str
     original_url: str
+    final_url: str | None = None
     failed_at_stage: PipelineStage
     error: str
+    error_code: str | None = None
+    status_code: int | None = None
     timings: PipelineTimings | None = None
 
 

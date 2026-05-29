@@ -162,8 +162,10 @@ async def _unchain_url_inner(
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    client = _get_client()
-    if prefer_https_when_schemeless and await _https_responds(client, current_url, headers):
+    client: httpx.AsyncClient | None = None
+    if prefer_https_when_schemeless:
+        client = _get_client()
+    if client is not None and await _https_responds(client, current_url, headers):
         https_url = _https_variant(current_url)
         if https_url is not None:
             current_url = https_url
@@ -182,6 +184,9 @@ async def _unchain_url_inner(
             if safety_error == "ssrf_blocked":
                 signals.append("ssrf_blocked")
             break
+
+        if client is None:
+            client = _get_client()
 
         hop, next_url, hop_error = await _follow_one_hop(
             client,
