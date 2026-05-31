@@ -98,9 +98,7 @@ def _should_apply_ai_suspicious_score(
     content_signal_values = {signal.value for signal in scoring.signals}
     if content_signal_values & _HIGH_RISK_CONTENT_SIGNALS:
         return True
-    if set(upstream_signals) & _HIGH_RISK_UPSTREAM_SIGNALS:
-        return True
-    return False
+    return bool(set(upstream_signals) & _HIGH_RISK_UPSTREAM_SIGNALS)
 
 
 def _unique_merge(left: list[str], right: list[str]) -> list[str]:

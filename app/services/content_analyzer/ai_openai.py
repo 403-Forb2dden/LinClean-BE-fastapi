@@ -36,7 +36,7 @@ _VERDICT_SCHEMA: dict[str, Any] = {
             },
             "reason": {
                 "type": "string",
-                "description": "Korean analysis reason plus user action guidance, within 100 chars.",
+                "description": "Korean analysis reason plus action guidance, within 100 chars.",
             },
         },
         "required": ["verdict", "reason"],
