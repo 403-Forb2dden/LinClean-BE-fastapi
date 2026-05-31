@@ -1,0 +1,80 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:   # 수동 실행 (테스트/재배포/롤백)
+
+permissions:
+  id-token: write   # OIDC
+  contents: read
+
+jobs:
+  build-and-push:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.vars.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: vars
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.IMAGE_NAME }}:latest
+            ${{ vars.IMAGE_NAME }}:${{ steps.vars.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deploy via SSM SendCommand
+        run: |
+          cmd_id=$(aws ssm send-command \
+            --instance-ids "${{ secrets.APP_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy fastapi ${{ needs.build-and-push.outputs.sha }}" \
+            --parameters commands='[
+              "set -e",
+              "cd ${{ vars.DEPLOY_DIR }}",
+              "docker compose pull ${{ vars.DEPLOY_SERVICE }}",
+              "docker compose up -d ${{ vars.DEPLOY_SERVICE }}",
+              "docker image prune -f"
+            ]' \
+            --query "Command.CommandId" --output text)
+          echo "CommandId=$cmd_id"
+          # 완료까지 폴링 후 상태 검증
+          for i in $(seq 1 30); do
+            status=$(aws ssm get-command-invocation \
+              --command-id "$cmd_id" \
+              --instance-id "${{ secrets.APP_INSTANCE_ID }}" \
+              --query "Status" --output text 2>/dev/null || echo Pending)
+            echo "status=$status"
+            case "$status" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation --command-id "$cmd_id" \
+                  --instance-id "${{ secrets.APP_INSTANCE_ID }}" \
+                  --query "StandardErrorContent" --output text
+                exit 1 ;;
+            esac
+            sleep 10
+          done
