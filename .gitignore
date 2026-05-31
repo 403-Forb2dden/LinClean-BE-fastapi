@@ -35,6 +35,7 @@ htmlcov/
 coverage.xml
 
 # JavaScript test-site builds
+test-sites/
 node_modules/
 .next/
 tsconfig.tsbuildinfo

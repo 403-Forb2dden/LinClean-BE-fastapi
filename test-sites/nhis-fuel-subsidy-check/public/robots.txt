@@ -1,4 +1,0 @@
-User-agent: *
-Disallow: /
-
-X-LinClean-Fixture: nhis-fuel-subsidy-check
