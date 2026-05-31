@@ -114,3 +114,38 @@ async def test_cancelled_error_propagates(async_session: AsyncSession) -> None:
         pytest.raises(asyncio.CancelledError),
     ):
         await check_threat_db(async_session, "https://x.test/")
+
+
+async def test_checks_original_and_final_url_candidates(async_session: AsyncSession) -> None:
+    clean = GSBResult(checked=True, is_threat=False)
+    hit = URLhausResult(
+        checked=True,
+        is_threat=True,
+        match_type="host",
+        matched_key="phish-origin.test",
+        threat="phishing",
+    )
+
+    with (
+        patch("app.services.threat_db.check.check_gsb", AsyncMock(return_value=clean)) as mock_gsb,
+        patch(
+            "app.services.threat_db.check.check_urlhaus",
+            AsyncMock(side_effect=[URLhausResult(checked=True, is_threat=False), hit]),
+        ) as mock_urlhaus,
+    ):
+        result = await check_threat_db(
+            async_session,
+            "https://benign-final.test/",
+            original_url="https://phish-origin.test/login",
+        )
+
+    assert result.is_malicious is True
+    assert result.urlhaus.matched_key == "phish-origin.test"
+    assert [call.args[0] for call in mock_gsb.await_args_list] == [
+        "https://benign-final.test/",
+        "https://phish-origin.test/login",
+    ]
+    assert [call.args[1] for call in mock_urlhaus.await_args_list] == [
+        "https://benign-final.test/",
+        "https://phish-origin.test/login",
+    ]

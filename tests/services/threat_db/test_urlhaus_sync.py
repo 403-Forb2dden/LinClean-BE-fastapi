@@ -16,6 +16,7 @@ SAMPLE_CSV = """# URLhaus recent URLs
 # id, dateadded, url, url_status, last_online, threat, tags, urlhaus_link, reporter
 1,2026-04-14 00:00:00,https://evil.test/a.exe,online,,malware_download,"exe,emotet",https://urlhaus.abuse.ch/url/1/,tester
 2,2026-04-14 00:05:00,https://github.com/bad/repo/raw/main/x.sh,online,,malware_download,"sh",https://urlhaus.abuse.ch/url/2/,tester
+3,2026-04-14 00:10:00,https://www.dropbox.com/scl/fi/bad/payload.exe,online,,malware_download,"exe",https://urlhaus.abuse.ch/url/3/,tester
 """
 
 
@@ -55,18 +56,19 @@ async def test_sync_inserts_rows(sync_engine_patch) -> None:
         stats = await sync_module.sync_urlhaus()
 
     # 최초 실행 — 모두 insert, update 는 0 이어야 한다(C1 회귀 방지).
-    assert stats["total"] == 2
-    assert stats["inserted"] == 2
+    assert stats["total"] == 3
+    assert stats["inserted"] == 3
     assert stats["updated"] == 0
     assert stats["failed"] == 0
 
     async with sync_engine_patch() as session:
         rows = (await session.execute(select(URLhausEntry))).scalars().all()
-    assert len(rows) == 2
+    assert len(rows) == 3
     by_id = {r.id: r for r in rows}
     assert by_id[1].host == "evil.test"
     assert by_id[1].match_key == "evil.test"
     assert by_id[2].match_key == "github.com/bad/repo"
+    assert by_id[3].match_key == "www.dropbox.com/scl/fi"
 
 
 async def test_sync_idempotent(sync_engine_patch) -> None:
@@ -80,10 +82,10 @@ async def test_sync_idempotent(sync_engine_patch) -> None:
     # 두 번째 실행은 모두 update 여야 한다 — insert/update 분류가 맞는지 검증.
     async with sync_engine_patch() as session:
         rows = (await session.execute(select(URLhausEntry))).scalars().all()
-    assert len(rows) == 2
-    assert stats2["total"] == 2
+    assert len(rows) == 3
+    assert stats2["total"] == 3
     assert stats2["inserted"] == 0
-    assert stats2["updated"] == 2
+    assert stats2["updated"] == 3
     assert stats2["failed"] == 0
 
 

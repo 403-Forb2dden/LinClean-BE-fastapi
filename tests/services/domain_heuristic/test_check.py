@@ -139,3 +139,30 @@ async def test_known_safe_domains_not_malicious():
         for url in safe_urls:
             result = await check_domain_heuristic(url)
             assert result.score < 50, f"{url} score={result.score}, signals={result.signals}"
+
+
+@pytest.mark.asyncio
+async def test_known_safe_dga_like_domains_are_not_flagged():
+    safe_urls = [
+        "https://www.stackoverflow.com/",
+        "https://www.postgresql.org/",
+        "https://www.typescriptlang.org/",
+    ]
+    with patch(_RDAP_PATH, new_callable=AsyncMock) as mock_rdap:
+        mock_rdap.return_value = (None, "not_found")
+        for url in safe_urls:
+            result = await check_domain_heuristic(url)
+            assert DomainHeuristicSignal.DGA_LIKE not in result.signals, (
+                f"{url} score={result.score}, signals={result.signals}"
+            )
+            assert result.score < 31
+
+
+@pytest.mark.asyncio
+async def test_known_safe_alias_domain_is_not_typo():
+    with patch(_RDAP_PATH, new_callable=AsyncMock) as mock_rdap:
+        mock_rdap.return_value = (None, "not_found")
+        result = await check_domain_heuristic("https://www.notion.com/")
+
+    assert DomainHeuristicSignal.TYPO_DOMAIN not in result.signals
+    assert result.score < 31

@@ -24,6 +24,7 @@ from app.services.content_analyzer.extract import ExtractedFeatures, extract_fea
 from app.services.content_analyzer.fetch import fetch_page
 from app.services.content_analyzer.render import render_page
 from app.services.content_analyzer.signals import ContentScoring, score_content
+from app.services.domain_heuristic.patterns import is_trusted_registered_domain
 
 logger = get_logger(__name__)
 
@@ -61,6 +62,45 @@ def _ai_score_weight(verdict: AIVerdict) -> int:
     if verdict == AIVerdict.SUSPICIOUS:
         return settings.score_weight_ai_suspicious
     return 0
+
+
+_HIGH_RISK_CONTENT_SIGNALS: frozenset[str] = frozenset(
+    {
+        ContentSignal.BRAND_IMPERSONATION_FORM.value,
+        ContentSignal.CREDENTIAL_FORM_EXTERNAL.value,
+        ContentSignal.SENSITIVE_ID_FIELD.value,
+        ContentSignal.FINANCIAL_FIELD.value,
+        ContentSignal.RISKY_DOWNLOAD_LINK.value,
+        ContentSignal.EXTERNAL_META_REFRESH.value,
+    }
+)
+_HIGH_RISK_UPSTREAM_SIGNALS: frozenset[str] = frozenset(
+    {
+        "URL_USERINFO",
+        "OPEN_REDIRECT_PARAM",
+        "BRAND_IN_URL",
+        "FREE_HOSTING_LURE",
+        "SENSITIVE_PATH",
+        "SUSPICIOUS_TLD",
+        "PUNYCODE_IDN",
+        "TYPO_DOMAIN",
+    }
+)
+
+
+def _should_apply_ai_suspicious_score(
+    final_url: str,
+    scoring: ContentScoring,
+    upstream_signals: tuple[str, ...],
+) -> bool:
+    if not is_trusted_registered_domain(final_url):
+        return True
+    content_signal_values = {signal.value for signal in scoring.signals}
+    if content_signal_values & _HIGH_RISK_CONTENT_SIGNALS:
+        return True
+    if set(upstream_signals) & _HIGH_RISK_UPSTREAM_SIGNALS:
+        return True
+    return False
 
 
 def _unique_merge(left: list[str], right: list[str]) -> list[str]:
@@ -279,7 +319,12 @@ async def analyze_content(
         ai_reason = inference.reason
         ai_model = inference.model
         ai_token_usage = inference.token_usage
-        score += _ai_score_weight(inference.verdict)
+        if inference.verdict != AIVerdict.SUSPICIOUS or _should_apply_ai_suspicious_score(
+            final_url,
+            scoring,
+            upstream_tuple,
+        ):
+            score += _ai_score_weight(inference.verdict)
     elif ai_error is None:
         # 추론이 None 인데 호출 단계 예외도 없었다면 NullAIProvider 동작.
         # 부팅 시 misconfiguration 으로 폴백된 NullProvider 면 fallback_reason 을 응답에 노출.

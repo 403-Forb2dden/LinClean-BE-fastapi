@@ -42,6 +42,7 @@ _DOMAIN_REASON_MESSAGES: dict[str, str] = {
     "FREE_HOSTING_LURE": "무료 호스팅 주소에서 신뢰를 유도하는 문구를 사용합니다.",
     "SENSITIVE_PATH": "로그인 또는 인증 관련 경로를 사용합니다.",
     "URL_SHORTENER": "단축 URL 서비스를 사용합니다.",
+    "REDIRECT_CROSS_ORIGIN": "입력 URL이 다른 사이트로 이동합니다.",
 }
 
 _CONTENT_REASON_MESSAGES: dict[str, str] = {
@@ -99,6 +100,7 @@ def _signal_weight(code: str) -> int:
         "FREE_HOSTING_LURE": settings.score_weight_free_hosting_lure,
         "SENSITIVE_PATH": settings.score_weight_sensitive_path,
         "URL_SHORTENER": settings.score_weight_url_shortener,
+        "REDIRECT_CROSS_ORIGIN": settings.score_weight_redirect_cross_origin,
     }
     content_weights = {
         "BRAND_IMPERSONATION_FORM": settings.score_weight_brand_impersonation,
@@ -313,20 +315,26 @@ def _failure_payload(
     elapsed_ms: int,
     analyzed_at: datetime,
 ) -> dict[str, Any]:
+    error: dict[str, Any] = {
+        "code": result.error_code or f"{result.failed_at_stage.value.upper()}_FAILED",
+        "stage": _error_stage(result.failed_at_stage),
+        "message": result.error,
+    }
+    if result.status_code is not None:
+        error["statusCode"] = result.status_code
+
     payload: dict[str, Any] = {
         "analysisId": result.analysis_id,
         "requestId": request_id,
         "status": "failed",
         "originalUrl": result.original_url,
-        "error": {
-            "code": f"{result.failed_at_stage.value.upper()}_FAILED",
-            "stage": _error_stage(result.failed_at_stage),
-            "message": result.error,
-        },
+        "error": error,
         "engineVersion": settings.app_version,
         "analyzedAt": _iso_z(analyzed_at),
         "elapsedMs": elapsed_ms,
     }
+    if result.final_url is not None:
+        payload["finalUrl"] = result.final_url
     return payload
 
 

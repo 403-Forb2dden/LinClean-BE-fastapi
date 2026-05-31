@@ -278,6 +278,20 @@ class TestCrossOrigin:
         assert any(s.startswith("cross_origin:") for s in result.signals)
         assert "cross_origin:safe.com->evil.com" in result.signals
 
+    @pytest.mark.asyncio
+    async def test_same_registered_domain_redirect_is_not_cross_origin(self) -> None:
+        responses = [
+            _make_response(301, {"location": "https://github.com/"}),
+            _make_response(200),
+        ]
+        client = _mock_client(responses)
+
+        with patch(_PATCH_TARGET, return_value=client):
+            result = await unchain_url("https://www.github.com/")
+
+        assert not any(s.startswith("cross_origin:") for s in result.signals)
+        assert result.final_url == "https://github.com/"
+
 
 class TestRelativeLocation:
     """상대 경로 Location 해석."""
@@ -554,16 +568,20 @@ class TestSsrfProtection:
     @pytest.mark.asyncio
     async def test_loopback_blocked(self) -> None:
         """127.0.0.1 등 루프백 주소 차단."""
-        with patch(
-            "app.services.unchainer.unchain._check_host_safety",
-            new_callable=AsyncMock,
-            return_value="ssrf_blocked",
+        with (
+            patch(
+                "app.services.unchainer.unchain._check_host_safety",
+                new_callable=AsyncMock,
+                return_value="ssrf_blocked",
+            ),
+            patch("app.services.unchainer.unchain._build_client") as build_client,
         ):
             result = await unchain_url("http://127.0.0.1/admin")
 
         assert result.error == "ssrf_blocked"
         assert "ssrf_blocked" in result.signals
         assert result.hop_count == 0
+        build_client.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_private_ip_blocked(self) -> None:

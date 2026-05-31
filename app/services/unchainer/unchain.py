@@ -18,6 +18,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.dns_cache import resolve_host_addrs
+from app.core.tld import extract_url_parts
 from app.schemas.analysis import HopRecord, UnchainResult
 
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
@@ -97,6 +98,17 @@ def _https_variant(url: str) -> str | None:
     return urlunparse(parsed._replace(scheme="https"))
 
 
+def _registered_domain_from_host(host: str | None) -> str:
+    if not host:
+        return ""
+    ext = extract_url_parts(f"https://{host.strip('[]')}/")
+    return (ext.top_domain_under_public_suffix or host).lower()
+
+
+def _is_registered_domain_change(left_host: str | None, right_host: str | None) -> bool:
+    return _registered_domain_from_host(left_host) != _registered_domain_from_host(right_host)
+
+
 def _is_analyzable_html_response(resp: httpx.Response) -> bool:
     content_type = resp.headers.get("content-type", "").lower()
     return 200 <= resp.status_code < 400 and "text/html" in content_type
@@ -162,8 +174,10 @@ async def _unchain_url_inner(
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    client = _get_client()
-    if prefer_https_when_schemeless and await _https_responds(client, current_url, headers):
+    client: httpx.AsyncClient | None = None
+    if prefer_https_when_schemeless:
+        client = _get_client()
+    if client is not None and await _https_responds(client, current_url, headers):
         https_url = _https_variant(current_url)
         if https_url is not None:
             current_url = https_url
@@ -182,6 +196,9 @@ async def _unchain_url_inner(
             if safety_error == "ssrf_blocked":
                 signals.append("ssrf_blocked")
             break
+
+        if client is None:
+            client = _get_client()
 
         hop, next_url, hop_error = await _follow_one_hop(
             client,
@@ -306,8 +323,8 @@ async def _follow_one_hop(
             if parsed_url.scheme == "https" and parsed_next.scheme == "http":
                 signals.append("scheme_downgrade")
 
-            # 크로스 오리진 호스트 변화
-            if parsed_url.hostname != parsed_next.hostname:
+            # 등록 도메인 변화. www → bare 같은 정상 canonical redirect 는 제외한다.
+            if _is_registered_domain_change(parsed_url.hostname, parsed_next.hostname):
                 signals.append(f"cross_origin:{parsed_url.hostname}->{parsed_next.hostname}")
 
             return hop, next_url, None

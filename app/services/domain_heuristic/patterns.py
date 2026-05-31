@@ -93,6 +93,13 @@ _URL_SHORTENERS = frozenset(
     }
 )
 
+_TRUSTED_BENIGN_DOMAINS = frozenset(
+    {
+        "example.com",
+        "httpbin.org",
+    }
+)
+
 _SENSITIVE_PATH_TOKENS = frozenset(
     {
         "account",
@@ -230,6 +237,18 @@ def _trusted_brand_domains() -> frozenset[str]:
             continue
         domains.add(line.lower())
     return frozenset(domains)
+
+
+def is_trusted_registered_domain(url: str) -> bool:
+    ext = extract_url_parts(url)
+    registered_domain = (ext.top_domain_under_public_suffix or "").lower()
+    return bool(
+        registered_domain
+        and (
+            registered_domain in _trusted_brand_domains()
+            or registered_domain in _TRUSTED_BENIGN_DOMAINS
+        )
+    )
 
 
 def _brand_labels_in_url_text(text: str) -> set[str]:

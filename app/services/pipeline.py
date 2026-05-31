@@ -14,8 +14,12 @@ import structlog
 from app.core.config import settings
 from app.core.exceptions import NormalizationError
 from app.core.tld import extract_url_parts
-from app.schemas.content_analysis import ContentAnalysisResult
-from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSkippedReason
+from app.schemas.content_analysis import ContentAnalysisResult, ContentSignal
+from app.schemas.domain_heuristic import (
+    DomainHeuristicResult,
+    DomainHeuristicSignal,
+    DomainHeuristicSkippedReason,
+)
 from app.schemas.normalize import NormalizeResult
 from app.schemas.pipeline import (
     PipelineFailure,
@@ -31,6 +35,11 @@ from app.schemas.unchain import UnchainResult
 from app.services.content_analyzer import analyze_content, skipped_already_danger
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
+from app.services.page_unavailability import (
+    PAGE_UNAVAILABLE_CODE,
+    content_page_unavailable,
+    unchain_page_unavailable,
+)
 from app.services.pipeline_deadline import (
     PipelineDeadline,
     PipelineStageTimeoutError,
@@ -99,9 +108,15 @@ async def _stage_unchain(log: structlog.stdlib.BoundLogger, normalized_url: str)
 
 
 async def _stage_threat_db(
-    log: structlog.stdlib.BoundLogger, final_url: str, session: AsyncSession
+    log: structlog.stdlib.BoundLogger,
+    final_url: str,
+    session: AsyncSession,
+    original_url: str | None = None,
 ) -> ThreatDbResult:
-    result = await check_threat_db(session, final_url)
+    if original_url and original_url != final_url:
+        result = await check_threat_db(session, final_url, original_url=original_url)
+    else:
+        result = await check_threat_db(session, final_url)
     log.info(
         "pipeline.threat_db.done",
         is_malicious=result.is_malicious,
@@ -138,6 +153,41 @@ def _collect_upstream_signals(
     if threat.urlhaus.is_threat:
         codes.append("URLHAUS_THREAT")
     return tuple(codes)
+
+
+def _augment_heuristic_with_redirect_signals(
+    heuristic: DomainHeuristicResult,
+    unchain: UnchainResult,
+) -> DomainHeuristicResult:
+    signals = list(heuristic.signals)
+    score = heuristic.score
+    if any(signal.startswith("cross_origin:") for signal in unchain.signals):
+        if DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN not in signals:
+            signals.append(DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN)
+            score = min(
+                score + settings.score_weight_redirect_cross_origin,
+                settings.domain_heuristic_score_cap,
+            )
+    if signals == heuristic.signals and score == heuristic.score:
+        return heuristic
+    return heuristic.model_copy(update={"signals": signals, "score": score})
+
+
+def _page_unavailable_content(
+    final_url: str,
+    *,
+    message: str,
+    status_code: int | None,
+) -> ContentAnalysisResult:
+    return ContentAnalysisResult(
+        final_url=final_url,
+        fetched=False,
+        status_code=status_code,
+        score=0,
+        signals=[ContentSignal.FETCH_FAILED],
+        reason=message,
+        error="page_unavailable",
+    )
 
 
 async def _stage_content_analysis(
@@ -214,9 +264,33 @@ def _skipped_heuristic(final_url: str) -> DomainHeuristicResult:
     )
 
 
+def _page_unavailable_failure(
+    *,
+    analysis_id: str,
+    original_url: str,
+    final_url: str,
+    failed_at_stage: PipelineStage,
+    error: str,
+    status_code: int | None,
+    started: float,
+    stage_timings: PipelineStageTimings,
+) -> PipelineFailure:
+    return PipelineFailure(
+        analysis_id=analysis_id,
+        original_url=original_url,
+        final_url=final_url,
+        failed_at_stage=failed_at_stage,
+        error=error,
+        error_code=PAGE_UNAVAILABLE_CODE,
+        status_code=status_code,
+        timings=_build_timings(started, stage_timings),
+    )
+
+
 async def _run_stage_2_and_3(
     log: structlog.stdlib.BoundLogger,
     final_url: str,
+    original_url: str,
     session: AsyncSession,
     timings: PipelineStageTimings,
 ) -> tuple[ThreatDbResult, DomainHeuristicResult, bool]:
@@ -231,7 +305,7 @@ async def _run_stage_2_and_3(
         _timed_async_stage(
             timings,
             PipelineStage.THREAT_DB,
-            _stage_threat_db(log, final_url, session),
+            _stage_threat_db(log, final_url, session, original_url),
         )
     )
     heur_task = asyncio.create_task(
@@ -335,13 +409,89 @@ async def run_pipeline(
         if stage_timings.unchain is None:
             _set_stage_timing(stage_timings, PipelineStage.UNCHAIN, stage_started)
 
+    if unavailable := unchain_page_unavailable(unchain):
+        message, status_code = unavailable
+        log.info(
+            "pipeline.page_unavailable",
+            stage=PipelineStage.UNCHAIN,
+            final_url=unchain.final_url,
+            status_code=status_code,
+            error=unchain.error,
+        )
+        try:
+            threat, heuristic, _ = await deadline.run(
+                "reputation",
+                _run_stage_2_and_3(
+                    log,
+                    unchain.final_url,
+                    norm.normalized_url,
+                    session,
+                    stage_timings,
+                ),
+                settings.pipeline_reputation_timeout_seconds,
+            )
+        except PipelineStageTimeoutError:
+            log.warning("pipeline.stage_timeout", stage="reputation")
+            threat = timed_out_threat_db_result(unchain.final_url)
+            heuristic = timed_out_domain_result(unchain.final_url)
+        except Exception as exc:
+            log.warning(
+                "pipeline.stage_error",
+                stage="reputation",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            threat = timed_out_threat_db_result(unchain.final_url)
+            heuristic = timed_out_domain_result(unchain.final_url)
+
+        heuristic = _augment_heuristic_with_redirect_signals(heuristic, unchain)
+        content = _page_unavailable_content(
+            unchain.final_url,
+            message=message,
+            status_code=status_code,
+        )
+        score = _total_score(threat, heuristic, content)
+        if threat.is_malicious or score >= settings.score_caution_threshold:
+            verdict = _decide_verdict(score, threat)
+            return PipelineSuccess(
+                analysis_id=analysis_id,
+                original_url=original_url,
+                final_url=unchain.final_url,
+                verdict=verdict,
+                score=score,
+                timings=_build_timings(total_started, stage_timings),
+                stages=PipelineStages(
+                    normalize=norm,
+                    unchain=unchain,
+                    threat_db=threat,
+                    domain_heuristic=heuristic,
+                    content_analysis=content,
+                ),
+            )
+        return _page_unavailable_failure(
+            analysis_id=analysis_id,
+            original_url=original_url,
+            final_url=unchain.final_url,
+            failed_at_stage=PipelineStage.UNCHAIN,
+            error=message,
+            status_code=status_code,
+            started=total_started,
+            stage_timings=stage_timings,
+        )
+
     # 2·3단계는 둘 다 unchain.final_url 만 필요하고 서로 독립이라 병렬로 돈다.
     # threat_db 가 먼저 malicious 로 끝나면 verdict 가 이미 danger 로 확정이므로
     # heuristic 을 cancel 하고 4단계까지 skip — 여기서 조기 종료가 일어난다.
     try:
         threat, heuristic, short_circuited = await deadline.run(
             "reputation",
-            _run_stage_2_and_3(log, unchain.final_url, session, stage_timings),
+            _run_stage_2_and_3(
+                log,
+                unchain.final_url,
+                norm.normalized_url,
+                session,
+                stage_timings,
+            ),
             settings.pipeline_reputation_timeout_seconds,
         )
     except PipelineStageTimeoutError:
@@ -349,6 +499,7 @@ async def run_pipeline(
         threat = timed_out_threat_db_result(unchain.final_url)
         heuristic = timed_out_domain_result(unchain.final_url)
         short_circuited = False
+
     except Exception as exc:
         log.warning(
             "pipeline.stage_error",
@@ -359,6 +510,8 @@ async def run_pipeline(
         threat = timed_out_threat_db_result(unchain.final_url)
         heuristic = timed_out_domain_result(unchain.final_url)
         short_circuited = False
+
+    heuristic = _augment_heuristic_with_redirect_signals(heuristic, unchain)
 
     if short_circuited:
         log.info(
@@ -371,13 +524,13 @@ async def run_pipeline(
         content = skipped_already_danger(unchain.final_url)
         _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
     else:
-        # 이미 danger 확정된 URL은 페이지를 받아보지 않는다 — 네트워크·AI 비용 절감.
-        # 판정이 바뀌지 않을 단계에 초 단위 지연과 건당 원화를 쓸 이유가 없다.
+        # known malicious 는 verdict 가 이미 외부 DB 로 확정됐으므로 페이지를 받아보지 않는다.
+        # 휴리스틱 danger 는 페이지가 존재하지 않을 수 있으므로 content fetch 로 가용성을 확인한다.
         preceding = _preceding_score(threat, heuristic)
-        if threat.is_malicious or preceding >= settings.score_danger_threshold:
+        if threat.is_malicious:
             log.info(
                 "pipeline.content_analysis.skipped",
-                reason=("threat_db_match" if threat.is_malicious else "already_danger"),
+                reason="threat_db_match",
                 preceding_score=preceding,
             )
             stage_started = time.perf_counter()
@@ -406,6 +559,44 @@ async def run_pipeline(
                     error_type=type(exc).__name__,
                 )
                 content = timed_out_content_result(unchain.final_url)
+
+    if unavailable := content_page_unavailable(content):
+        message, status_code = unavailable
+        log.info(
+            "pipeline.page_unavailable",
+            stage=PipelineStage.CONTENT_ANALYSIS,
+            final_url=unchain.final_url,
+            status_code=status_code,
+            error=content.error,
+        )
+        score = _total_score(threat, heuristic, content)
+        if threat.is_malicious or score >= settings.score_caution_threshold:
+            verdict = _decide_verdict(score, threat)
+            return PipelineSuccess(
+                analysis_id=analysis_id,
+                original_url=original_url,
+                final_url=unchain.final_url,
+                verdict=verdict,
+                score=score,
+                timings=_build_timings(total_started, stage_timings),
+                stages=PipelineStages(
+                    normalize=norm,
+                    unchain=unchain,
+                    threat_db=threat,
+                    domain_heuristic=heuristic,
+                    content_analysis=content,
+                ),
+            )
+        return _page_unavailable_failure(
+            analysis_id=analysis_id,
+            original_url=original_url,
+            final_url=unchain.final_url,
+            failed_at_stage=PipelineStage.CONTENT_ANALYSIS,
+            error=message,
+            status_code=status_code,
+            started=total_started,
+            stage_timings=stage_timings,
+        )
 
     score = _total_score(threat, heuristic, content)
     verdict = _decide_verdict(score, threat)

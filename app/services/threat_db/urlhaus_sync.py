@@ -79,7 +79,7 @@ def _derive_match_key(url: str) -> tuple[str, str] | None:
         return None
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
-    # derive_keys 는 [host_path, host] 또는 [host] — 첫 원소가 가장 구체적 키.
+    # derive_keys 는 [host_path] 또는 [host] — 첫 원소가 저장할 match_key.
     return host, keys[0]
 
 

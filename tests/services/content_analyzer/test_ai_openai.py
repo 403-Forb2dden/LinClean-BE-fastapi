@@ -132,6 +132,9 @@ async def test_openai_prompt_requests_short_expert_plain_korean_reason() -> None
     assert "100자" in system_msg
     assert "보안 전문가" in system_msg
     assert "쉬운 한국어" in system_msg
+    assert "사용자 행동 가이드" in system_msg
+    assert "비밀번호" in system_msg
+    assert "결제" in system_msg
 
 
 async def test_openai_truncates_reason_to_100_chars() -> None:

@@ -212,6 +212,32 @@ class TestHighSignalStaticFeatures:
         assert "카카오톡" in features.korean_lure_keywords
         assert "카카오톡 최신버전 다운로드" in features.cta_texts
 
+    def test_regular_js_anchor_is_not_risky_download(self) -> None:
+        html = """
+        <html>
+          <body>
+            <a href="/assets/bundle.js">bundle</a>
+          </body>
+        </html>
+        """
+
+        features = extract_features(html, base_url="https://normal.test/")
+
+        assert features.download_links == []
+
+    def test_download_js_anchor_is_risky_download(self) -> None:
+        html = """
+        <html>
+          <body>
+            <a href="/payload.js" download>download script</a>
+          </body>
+        </html>
+        """
+
+        features = extract_features(html, base_url="https://suspicious.test/")
+
+        assert features.download_links == ["https://suspicious.test/payload.js"]
+
     def test_extraction_caps_high_signal_lists(self) -> None:
         inputs = "".join(
             f'<label for="i{i}">휴대폰 번호 {i}</label>'

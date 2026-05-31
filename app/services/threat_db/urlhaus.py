@@ -6,6 +6,7 @@ URL 완전일치 → match_key(host_path/host) 조회 순.
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,14 +42,52 @@ def _to_result(
     )
 
 
+def _url_variants(url: str) -> list[str]:
+    variants: list[str] = []
+
+    def add(candidate: str) -> None:
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+
+    add(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return variants
+    if not parts.scheme or not parts.netloc:
+        return variants
+
+    path_variants = [parts.path]
+    if parts.path == "":
+        path_variants.append("/")
+    elif parts.path == "/":
+        path_variants.append("")
+    elif parts.path.endswith("/"):
+        path_variants.append(parts.path.rstrip("/"))
+    else:
+        path_variants.append(parts.path + "/")
+
+    schemes = [parts.scheme]
+    if parts.scheme == "https":
+        schemes.append("http")
+    elif parts.scheme == "http":
+        schemes.append("https")
+
+    for scheme in schemes:
+        for path in path_variants:
+            add(urlunsplit((scheme, parts.netloc, path, parts.query, parts.fragment)))
+    return variants
+
+
 async def check_urlhaus(session: AsyncSession, url: str) -> URLhausResult:
     """URLhaus 로컬 스냅샷에서 URL 매칭 여부 조회."""
     try:
         # 1) URL 완전일치
-        stmt = select(URLhausEntry).where(URLhausEntry.url == url)
-        row = (await session.execute(stmt)).scalar_one_or_none()
-        if row is not None:
-            return _to_result(row, "url", row.url)
+        for candidate in _url_variants(url):
+            stmt = select(URLhausEntry).where(URLhausEntry.url == candidate)
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            if row is not None:
+                return _to_result(row, "url", row.url)
 
         # 2) match_key IN (...)
         keys = derive_keys(url)

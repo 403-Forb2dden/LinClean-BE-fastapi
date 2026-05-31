@@ -53,8 +53,9 @@ _MAX_FORM_FIELD_SUMMARIES = 80
 _MAX_CTA_TEXTS = 40
 _MAX_DOWNLOAD_LINKS = 40
 _RISKY_DOWNLOAD_EXTENSIONS: frozenset[str] = frozenset(
-    {".apk", ".ipa", ".exe", ".msi", ".dmg", ".scr", ".bat", ".cmd", ".js", ".vbs"}
+    {".apk", ".ipa", ".exe", ".msi", ".dmg", ".scr", ".bat", ".cmd", ".vbs"}
 )
+_RISKY_DOWNLOAD_ATTR_EXTENSIONS: frozenset[str] = frozenset({".js"})
 
 _KOREAN_LURE_KEYWORDS: tuple[str, ...] = (
     "지원금",
@@ -341,13 +342,21 @@ def _collect_cta_texts(soup: BeautifulSoup) -> list[str]:
     return texts
 
 
-def _is_risky_download_url(raw_url: str, base_url: str) -> str | None:
+def _anchor_has_download_attr(anchor: Tag) -> bool:
+    return anchor.has_attr("download")
+
+
+def _is_risky_download_url(raw_url: str, base_url: str, *, has_download_attr: bool) -> str | None:
     joined = urljoin(base_url, raw_url.strip())
     parsed = urlparse(joined)
     if parsed.scheme not in _NAV_SCHEMES:
         return None
     path = parsed.path.lower()
     if any(path.endswith(ext) for ext in _RISKY_DOWNLOAD_EXTENSIONS):
+        return joined
+    if has_download_attr and any(
+        path.endswith(ext) for ext in _RISKY_DOWNLOAD_ATTR_EXTENSIONS
+    ):
         return joined
     return None
 
@@ -358,7 +367,11 @@ def _collect_download_links(soup: BeautifulSoup, base_url: str) -> list[str]:
         href = anchor.get("href")
         if not isinstance(href, str):
             continue
-        resolved = _is_risky_download_url(href, base_url)
+        resolved = _is_risky_download_url(
+            href,
+            base_url,
+            has_download_attr=_anchor_has_download_attr(anchor),
+        )
         if resolved is not None:
             _append_unique(links, resolved, limit=_MAX_DOWNLOAD_LINKS)
         if len(links) >= _MAX_DOWNLOAD_LINKS:

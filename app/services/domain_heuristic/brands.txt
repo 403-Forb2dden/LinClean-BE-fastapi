@@ -195,6 +195,7 @@ sktelecom.com
 lguplus.com
 uplus.co.kr
 lg.com
+lg.co.kr
 skbroadband.com
 ktcs.co.kr
 ktwiz.co.kr
@@ -428,11 +429,16 @@ github.com
 gitlab.com
 bitbucket.org
 stackoverflow.com
+python.org
+postgresql.org
+typescriptlang.org
+rust-lang.org
 docker.com
 dockerhub.com
 cloudflare.com
 digitalocean.com
 notion.so
+notion.com
 atlassian.com
 jira.atlassian.com
 confluence.atlassian.com
@@ -548,6 +554,9 @@ razer.com
 # ─────────────────────────────────────────
 netflix.com
 spotify.com
+ubuntu.com
+apnews.com
+ethz.ch
 dropbox.com
 wordpress.com
 wix.com

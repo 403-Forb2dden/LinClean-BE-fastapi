@@ -14,15 +14,21 @@ from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicS
 from app.schemas.normalize import NormalizeResult
 from app.schemas.pipeline import PipelineFailure, PipelineStage, PipelineSuccess, Verdict
 from app.schemas.threat_db import GSBMatch, GSBResult, ThreatDbResult, URLhausResult
-from app.schemas.unchain import UnchainResult
+from app.schemas.unchain import HopRecord, UnchainResult
 from app.services.pipeline import run_pipeline
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def _make_unchain(final_url: str) -> UnchainResult:
-    return UnchainResult(input_url=final_url, final_url=final_url, hops=[], hop_count=0, signals=[])
+def _make_unchain(final_url: str, *, signals: list[str] | None = None) -> UnchainResult:
+    return UnchainResult(
+        input_url=final_url,
+        final_url=final_url,
+        hops=[],
+        hop_count=0,
+        signals=signals or [],
+    )
 
 
 def _make_threat(final_url: str) -> ThreatDbResult:
@@ -47,6 +53,18 @@ def _make_heuristic(domain: str) -> DomainHeuristicResult:
 
 def _make_content(final_url: str, *, score: int = 0) -> ContentAnalysisResult:
     return ContentAnalysisResult(final_url=final_url, fetched=True, score=score, signals=[])
+
+
+def _missing_content(final_url: str, *, status_code: int = 404) -> ContentAnalysisResult:
+    return ContentAnalysisResult(
+        final_url=final_url,
+        fetched=False,
+        status_code=status_code,
+        score=0,
+        signals=[ContentSignal.FETCH_FAILED],
+        reason="페이지를 찾을 수 없습니다.",
+        error=f"http_error_{status_code}",
+    )
 
 
 async def _resolve_upstream(value: object) -> object:
@@ -243,6 +261,86 @@ async def test_run_pipeline_runs_content_when_below_danger(
     assert await _resolve_upstream(kwargs["upstream_signals"]) == ()
 
 
+@pytest.mark.asyncio
+async def test_run_pipeline_returns_failure_when_unchain_sees_404(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://missing.test/not-found"
+    unchain = UnchainResult(
+        input_url=final_url,
+        final_url=final_url,
+        hops=[],
+        hop_count=0,
+        signals=[],
+    )
+    unchain.hops.append(HopRecord(url=final_url, status_code=404))
+    unchain.hop_count = 1
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = unchain
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _heuristic_with_score(0)
+
+        result = await run_pipeline("aid-404", final_url, async_session)
+
+    assert isinstance(result, PipelineFailure)
+    assert result.failed_at_stage == PipelineStage.UNCHAIN
+    assert result.error_code == "PAGE_UNAVAILABLE"
+    assert result.final_url == final_url
+    assert result.status_code == 404
+    assert "페이지를 찾을 수 없습니다" in result.error
+    mock_threat.assert_awaited_once()
+    mock_heuristic.assert_awaited_once()
+    mock_content.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_returns_failure_when_content_fetch_cannot_connect(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://offline.test/"
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _heuristic_with_score(0)
+        mock_content.return_value = ContentAnalysisResult(
+            final_url=final_url,
+            fetched=False,
+            score=0,
+            signals=[ContentSignal.FETCH_FAILED],
+            reason="페이지에 연결할 수 없습니다.",
+            error="connect_error",
+        )
+
+        result = await run_pipeline("aid-connect", final_url, async_session)
+
+    assert isinstance(result, PipelineFailure)
+    assert result.failed_at_stage == PipelineStage.CONTENT_ANALYSIS
+    assert result.error_code == "PAGE_UNAVAILABLE"
+    assert result.final_url == final_url
+    assert result.status_code is None
+    assert result.error == "페이지에 연결할 수 없습니다."
+
+
 class TestVerdictAndScore:
     """PipelineSuccess.verdict / score 매핑 회귀."""
 
@@ -385,6 +483,43 @@ async def test_run_pipeline_passes_upstream_signals_to_content_analysis(
     args, kwargs = mock_content.await_args
     assert args == (final_url,)
     assert await _resolve_upstream(kwargs["upstream_signals"]) == ("TYPO_DOMAIN", "NEW_DOMAIN")
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_scores_cross_origin_redirect_signal(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://redirected.example.com/login"
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(
+            original_url="https://short.test/a",
+            normalized_url="https://short.test/a",
+        )
+        mock_unchain.return_value = _make_unchain(
+            final_url,
+            signals=["cross_origin:short.test->redirected.example.com"],
+        )
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _heuristic_with_score(20)
+        mock_content.return_value = _make_content(final_url)
+
+        result = await run_pipeline("aid-redirect-score", "https://short.test/a", async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    assert DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN in result.stages.domain_heuristic.signals
+    assert result.stages.domain_heuristic.score > 20
+    args, kwargs = mock_content.await_args
+    assert args == (final_url,)
+    assert "REDIRECT_CROSS_ORIGIN" in await _resolve_upstream(kwargs["upstream_signals"])
 
 
 @pytest.mark.asyncio
@@ -595,10 +730,10 @@ async def test_run_pipeline_short_circuits_on_urlhaus_match(
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold(
+async def test_run_pipeline_checks_content_when_heuristic_alone_exceeds_threshold(
     async_session: AsyncSession,
 ) -> None:
-    """위협 DB 미매치여도 휴리스틱만으로 danger 구간이면 건너뛴다."""
+    """위협 DB 미매치인 휴리스틱 danger 는 페이지 존재 확인 후 verdict 를 낸다."""
     final_url = "https://typo-naverr.test/"
 
     with (
@@ -614,12 +749,51 @@ async def test_run_pipeline_skips_content_when_heuristic_alone_exceeds_threshold
         mock_unchain.return_value = _make_unchain(final_url)
         mock_threat.return_value = _make_threat(final_url)
         mock_heuristic.return_value = _heuristic_with_score(settings.score_danger_threshold)
+        mock_content.return_value = _make_content(final_url)
 
         result = await run_pipeline("aid-heur", final_url, async_session)
 
     assert isinstance(result, PipelineSuccess)
+    mock_content.assert_awaited_once()
+    assert result.verdict == Verdict.DANGER
+    assert result.stages.content_analysis.fetched is True
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_returns_verdict_when_page_unavailable_but_url_signal_is_strong(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "http://xj3kq9vbnm2p7zla.com/login"
+    unchain = _make_unchain(final_url)
+    unchain.error = "dns_failure"
+    heuristic = DomainHeuristicResult(
+        domain="xj3kq9vbnm2p7zla.com",
+        score=settings.score_caution_threshold,
+        signals=[DomainHeuristicSignal.DGA_LIKE],
+    )
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = unchain
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = heuristic
+
+        result = await run_pipeline("aid-unavailable-url-signal", final_url, async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    assert result.verdict == Verdict.CAUTION
+    assert result.score == settings.score_caution_threshold
+    assert result.stages.content_analysis.fetched is False
+    assert result.stages.content_analysis.error == "page_unavailable"
     mock_content.assert_not_awaited()
-    assert result.stages.content_analysis.error == "skipped_already_danger"
 
 
 @pytest.mark.asyncio

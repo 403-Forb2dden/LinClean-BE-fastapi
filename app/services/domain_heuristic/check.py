@@ -41,6 +41,7 @@ def _signal_scores() -> dict[DomainHeuristicSignal, int]:
         DomainHeuristicSignal.FREE_HOSTING_LURE: settings.score_weight_free_hosting_lure,
         DomainHeuristicSignal.SENSITIVE_PATH: settings.score_weight_sensitive_path,
         DomainHeuristicSignal.URL_SHORTENER: settings.score_weight_url_shortener,
+        DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN: settings.score_weight_redirect_cross_origin,
     }
 
 
