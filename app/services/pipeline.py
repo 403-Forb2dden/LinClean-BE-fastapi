@@ -161,13 +161,15 @@ def _augment_heuristic_with_redirect_signals(
 ) -> DomainHeuristicResult:
     signals = list(heuristic.signals)
     score = heuristic.score
-    if any(signal.startswith("cross_origin:") for signal in unchain.signals):
-        if DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN not in signals:
-            signals.append(DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN)
-            score = min(
-                score + settings.score_weight_redirect_cross_origin,
-                settings.domain_heuristic_score_cap,
-            )
+    if (
+        any(signal.startswith("cross_origin:") for signal in unchain.signals)
+        and DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN not in signals
+    ):
+        signals.append(DomainHeuristicSignal.REDIRECT_CROSS_ORIGIN)
+        score = min(
+            score + settings.score_weight_redirect_cross_origin,
+            settings.domain_heuristic_score_cap,
+        )
     if signals == heuristic.signals and score == heuristic.score:
         return heuristic
     return heuristic.model_copy(update={"signals": signals, "score": score})

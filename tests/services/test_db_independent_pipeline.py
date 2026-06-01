@@ -207,7 +207,7 @@ async def test_db_independent_pipeline_returns_failure_when_page_unavailable() -
 
 
 @pytest.mark.asyncio
-async def test_db_independent_pipeline_returns_verdict_when_unavailable_url_signal_is_strong() -> None:
+async def test_db_independent_pipeline_verdict_on_strong_unavailable_signal() -> None:
     final_url = "http://xj3kq9vbnm2p7zla.com/login"
     unchain = _make_unchain(final_url)
     unchain.error = "dns_failure"
