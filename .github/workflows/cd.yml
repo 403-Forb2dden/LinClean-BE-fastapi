@@ -78,3 +78,9 @@ jobs:
             esac
             sleep 10
           done
+          # 루프가 타임아웃(300s)으로 끝났는데 Success 가 아니면 배포 실패로 처리.
+          # break 없이 빠져나온 Pending/InProgress 상태를 성공으로 오인하지 않도록 명시 검증.
+          if [ "$status" != "Success" ]; then
+            echo "deploy did not reach Success within timeout (last status=$status)"
+            exit 1
+          fi

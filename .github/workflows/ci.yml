@@ -23,3 +23,5 @@ jobs:
         run: ruff check app tests
       - name: Pytest
         run: pytest
+      - name: Docker build
+        run: docker build -t linclean-fastapi:ci .
