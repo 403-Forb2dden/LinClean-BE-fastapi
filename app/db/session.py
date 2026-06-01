@@ -12,13 +12,8 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 
-# SQLite-specific engine. Notes:
-#   - check_same_thread=False is required because aiosqlite hands the
-#     connection across threads internally.
-#   - We don't tune pool size: SQLite is single-writer, and the default
-#     pool is fine for an async app of this scale.
-#   - We ensure the parent directory exists at import time so the very
-#     first connection doesn't fail in a fresh checkout.
+# aiosqlite는 스레드 간 커넥션 전달하므로 check_same_thread=False 필수.
+# 데이터 디렉토리 없으면 첫 연결에서 터지니까 미리 생성.
 settings.sqlite_file.parent.mkdir(parents=True, exist_ok=True)
 
 engine: AsyncEngine = create_async_engine(
@@ -31,12 +26,7 @@ engine: AsyncEngine = create_async_engine(
 
 @event.listens_for(Engine, "connect")
 def _enable_sqlite_pragmas(dbapi_connection: Any, _: Any) -> None:
-    """Apply sane defaults for every SQLite connection.
-
-    - WAL gives concurrent readers while a writer is active.
-    - foreign_keys=ON is off by default in SQLite (!) and must be re-enabled.
-    - NORMAL synchronous trades a tiny crash-recovery window for big writes.
-    """
+    """WAL 모드로 동시 읽기 지원, foreign_keys=ON (SQLite 기본값은 OFF)."""
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -55,7 +45,7 @@ SessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency yielding an AsyncSession with rollback-on-error."""
+    """AsyncSession 제공. 미처리 예외 시 롤백."""
     async with SessionLocal() as session:
         try:
             yield session

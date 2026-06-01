@@ -1,11 +1,10 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from app.core.config import settings
 from app.db.base import Base
-from app.models import *  # noqa: F401,F403  -- ensure all models are imported
+from app.models import *  # noqa: F403  -- ensure all models are imported
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.alembic_database_url)
@@ -15,8 +14,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# SQLite + Alembic: enable batch mode so ALTER TABLE migrations work,
-# since SQLite has very limited native ALTER support.
+# SQLite는 ALTER TABLE 지원이 빈약해서 batch 모드 필수.
 RENDER_AS_BATCH = True
 
 

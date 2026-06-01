@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from structlog.types import EventDict, Processor
@@ -16,11 +16,7 @@ def _drop_color_message_key(_: Any, __: str, event_dict: EventDict) -> EventDict
 
 
 def configure_logging() -> None:
-    """Configure structlog + stdlib logging.
-
-    All logs (including from uvicorn, sqlalchemy, etc.) are routed through
-    structlog so we get consistent JSON or pretty output everywhere.
-    """
+    """structlog를 모든 로거의 단일 출력 경로로 설정."""
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
     shared_processors: list[Processor] = [
@@ -64,7 +60,7 @@ def configure_logging() -> None:
     root.handlers = [handler]
     root.setLevel(settings.log_level)
 
-    # Quiet noisy libs; route through root handler
+    # 로그 시끄러운 라이브러리 억제, root 핸들러로 통합
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.handlers = []
@@ -76,4 +72,4 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))
