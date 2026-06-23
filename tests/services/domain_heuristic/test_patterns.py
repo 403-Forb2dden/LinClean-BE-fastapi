@@ -86,6 +86,19 @@ def test_open_redirect_param_url() -> None:
     assert DomainHeuristicSignal.OPEN_REDIRECT_PARAM in signals
 
 
+def test_same_registered_domain_redirect_param_is_not_open_redirect_signal() -> None:
+    signals = check_patterns(
+        "https://link.naver.com/bridge?"
+        "url=https%3A%2F%2Fm.naver.com%2Fshorts%2F%3FserviceType%3DCHZZK"
+    )
+    assert DomainHeuristicSignal.OPEN_REDIRECT_PARAM not in signals
+
+
+def test_external_redirect_param_on_trusted_domain_remains_open_redirect_signal() -> None:
+    signals = check_patterns("https://link.naver.com/bridge?url=https%3A%2F%2Fevil.test%2F")
+    assert DomainHeuristicSignal.OPEN_REDIRECT_PARAM in signals
+
+
 def test_no_open_redirect_param() -> None:
     signals = check_patterns("https://example.com/search?q=hello")
     assert DomainHeuristicSignal.OPEN_REDIRECT_PARAM not in signals

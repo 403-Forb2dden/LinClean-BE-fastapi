@@ -263,6 +263,26 @@ def _brand_labels_in_url_text(text: str) -> set[str]:
     return found
 
 
+def _registered_domain_from_url(url: str) -> str:
+    ext = extract_url_parts(url)
+    return (ext.top_domain_under_public_suffix or urlparse(url).hostname or "").lower()
+
+
+def _has_external_open_redirect_target(qs: dict[str, list[str]], registered_domain: str) -> bool:
+    for key, values in qs.items():
+        if key.lower() not in _OPEN_REDIRECT_PARAMS:
+            continue
+        if not values:
+            return True
+        for value in values:
+            parsed_value = urlparse(value)
+            if parsed_value.scheme not in {"http", "https"} or not parsed_value.hostname:
+                return True
+            if _registered_domain_from_url(value) != registered_domain:
+                return True
+    return False
+
+
 def check_patterns(url: str) -> list[DomainHeuristicSignal]:
     signals: list[DomainHeuristicSignal] = []
     parsed = urlparse(url)
@@ -307,7 +327,7 @@ def check_patterns(url: str) -> list[DomainHeuristicSignal]:
 
     # 오픈 리다이렉트 파라미터
     qs = parse_qs(parsed.query, keep_blank_values=True)
-    if any(k.lower() in _OPEN_REDIRECT_PARAMS for k in qs):
+    if _has_external_open_redirect_target(qs, registered_domain):
         signals.append(DomainHeuristicSignal.OPEN_REDIRECT_PARAM)
 
     # private suffix(github.io, vercel.app 등)는 tld parser에서 suffix로 잡히므로

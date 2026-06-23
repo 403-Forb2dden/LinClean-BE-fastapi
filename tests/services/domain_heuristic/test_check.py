@@ -166,3 +166,16 @@ async def test_known_safe_alias_domain_is_not_typo():
 
     assert DomainHeuristicSignal.TYPO_DOMAIN not in result.signals
     assert result.score < 31
+
+
+@pytest.mark.asyncio
+async def test_naver_bridge_to_naver_shorts_is_below_caution_threshold():
+    with patch(_RDAP_PATH, new_callable=AsyncMock) as mock_rdap:
+        mock_rdap.return_value = (None, "not_found")
+        result = await check_domain_heuristic(
+            "https://link.naver.com/bridge?"
+            "url=https%3A%2F%2Fm.naver.com%2Fshorts%2F%3FserviceType%3DCHZZK"
+        )
+
+    assert DomainHeuristicSignal.OPEN_REDIRECT_PARAM not in result.signals
+    assert result.score < 31
