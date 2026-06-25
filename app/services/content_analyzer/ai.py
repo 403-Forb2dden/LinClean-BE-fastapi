@@ -55,6 +55,12 @@ class AIProvider(Protocol):
     async def infer(self, ctx: AIPromptContext) -> AIInference | None: ...
 
 
+class AIProviderError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class NullAIProvider:
     """모델이 설정되지 않았을 때의 기본 구현. 추론을 시도하지 않고 None 반환.
 
