@@ -9,13 +9,13 @@ import httpx
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.schemas.pipeline import PipelineFailure, PipelineStage, PipelineSuccess, Verdict
+from app.schemas.pipeline import PipelineFailure, PipelineStage, PipelineSuccess
+from app.services.analysis_summary import build_analysis_summary
 
 logger = get_logger(__name__)
 
 _CALLBACK_PATH = "/internal/analysis-result"
 _MAX_ATTEMPTS = 3
-_KNOWN_MALICIOUS_SUMMARY = "악성으로 알려진 페이지 입니다."
 
 _STAGE_NUMBERS: dict[PipelineStage, int] = {
     PipelineStage.NORMALIZE: 1,
@@ -191,8 +191,7 @@ def _callback_reasons(result: PipelineSuccess) -> list[dict[str, Any]]:
                 stage=4,
                 weight=settings.score_weight_ai_phishing,
                 message=(
-                    stages.content_analysis.ai_reason
-                    or "AI가 피싱 가능성이 높다고 판단했습니다."
+                    stages.content_analysis.ai_reason or "AI가 피싱 가능성이 높다고 판단했습니다."
                 ),
             )
         elif verdict == "suspicious":
@@ -202,8 +201,7 @@ def _callback_reasons(result: PipelineSuccess) -> list[dict[str, Any]]:
                 stage=4,
                 weight=settings.score_weight_ai_suspicious,
                 message=(
-                    stages.content_analysis.ai_reason
-                    or "AI가 의심스러운 페이지로 판단했습니다."
+                    stages.content_analysis.ai_reason or "AI가 의심스러운 페이지로 판단했습니다."
                 ),
             )
 
@@ -211,27 +209,19 @@ def _callback_reasons(result: PipelineSuccess) -> list[dict[str, Any]]:
 
 
 def _callback_summary(result: PipelineSuccess) -> str:
-    if result.stages.threat_db.is_malicious:
-        return _KNOWN_MALICIOUS_SUMMARY
-    content = result.stages.content_analysis
-    if content.ai_reason:
-        return content.ai_reason
-    if content.reason:
-        return content.reason
-    if result.verdict == Verdict.DANGER:
-        return "위험성이 높은 페이지입니다. 접속과 정보 입력을 피하세요."
-    if result.verdict == Verdict.CAUTION:
-        return "주의가 필요한 페이지입니다. 링크와 입력 정보를 한 번 더 확인하세요."
-    return "현재 분석 기준에서 뚜렷한 위험 신호가 확인되지 않았습니다."
+    if result.summary:
+        return result.summary
+    return build_analysis_summary(
+        verdict=result.verdict,
+        threat=result.stages.threat_db,
+        heuristic=result.stages.domain_heuristic,
+        content=result.stages.content_analysis,
+    )
 
 
 def _spring_stages(result: PipelineSuccess) -> dict[str, Any]:
     stages = result.stages
-    gsb_matches = [
-        match.threat_type
-        for match in stages.threat_db.gsb.matches
-        if match.threat_type
-    ]
+    gsb_matches = [match.threat_type for match in stages.threat_db.gsb.matches if match.threat_type]
 
     chain = [hop.url for hop in stages.unchain.hops]
     if not chain:

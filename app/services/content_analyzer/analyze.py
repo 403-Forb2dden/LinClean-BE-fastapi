@@ -19,7 +19,12 @@ from app.schemas.content_analysis import (
     ContentSignal,
     TokenUsage,
 )
-from app.services.content_analyzer.ai import AIPromptContext, AIProvider, get_ai_provider
+from app.services.content_analyzer.ai import (
+    AIPromptContext,
+    AIProvider,
+    AIProviderError,
+    get_ai_provider,
+)
 from app.services.content_analyzer.extract import ExtractedFeatures, extract_features_async
 from app.services.content_analyzer.fetch import fetch_page
 from app.services.content_analyzer.render import render_page
@@ -114,8 +119,7 @@ def _merge_features(static: ExtractedFeatures, rendered: ExtractedFeatures) -> E
         title=rendered.title or static.title,
         has_password_field=static.has_password_field or rendered.has_password_field,
         has_password_form_external_action=(
-            static.has_password_form_external_action
-            or rendered.has_password_form_external_action
+            static.has_password_form_external_action or rendered.has_password_form_external_action
         ),
         has_meta_refresh=static.has_meta_refresh or rendered.has_meta_refresh,
         has_external_meta_refresh=(
@@ -246,6 +250,7 @@ async def analyze_content(
     *,
     provider: AIProvider | None = None,
     upstream_signals: Iterable[str] | Awaitable[Iterable[str]] = (),
+    use_ai: bool = True,
 ) -> ContentAnalysisResult:
     """콘텐츠 정적 분석 진입점.
 
@@ -289,27 +294,38 @@ async def analyze_content(
     ai_model: str | None = None
     ai_token_usage: TokenUsage | None = None
 
-    active_provider = provider if provider is not None else get_ai_provider()
     if inspect.isawaitable(upstream_signals):
         upstream_tuple = tuple(await upstream_signals)
     else:
         upstream_tuple = tuple(upstream_signals)
-    try:
-        inference = await active_provider.infer(
-            _build_prompt_context(final_url, features, upstream_tuple)
-        )
-    except asyncio.CancelledError:
-        # shutdown / 요청 타임아웃 신호는 degraded 결과로 흡수하지 않는다
-        raise
-    except Exception as exc:
-        logger.warning(
-            "content_analysis.ai_error",
-            url=final_url,
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        ai_error = "ai_unavailable"
-        inference = None
+    active_provider: AIProvider | None = None
+    inference = None
+    if use_ai:
+        active_provider = provider if provider is not None else get_ai_provider()
+        try:
+            inference = await active_provider.infer(
+                _build_prompt_context(final_url, features, upstream_tuple)
+            )
+        except asyncio.CancelledError:
+            # shutdown / 요청 타임아웃 신호는 degraded 결과로 흡수하지 않는다
+            raise
+        except AIProviderError as exc:
+            logger.warning(
+                "content_analysis.ai_error",
+                url=final_url,
+                error=str(exc),
+                error_code=exc.code,
+                error_type=type(exc).__name__,
+            )
+            ai_error = exc.code
+        except Exception as exc:
+            logger.warning(
+                "content_analysis.ai_error",
+                url=final_url,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            ai_error = "ai_unavailable"
 
     score = scoring.score
     if inference is not None:
@@ -323,7 +339,7 @@ async def analyze_content(
             upstream_tuple,
         ):
             score += _ai_score_weight(inference.verdict)
-    elif ai_error is None:
+    elif use_ai and ai_error is None and active_provider is not None:
         # 추론이 None 인데 호출 단계 예외도 없었다면 NullAIProvider 동작.
         # 부팅 시 misconfiguration 으로 폴백된 NullProvider 면 fallback_reason 을 응답에 노출.
         # 정상 NullProvider 는 fallback_reason=None 이라 ai_error 가 None 으로 유지된다.

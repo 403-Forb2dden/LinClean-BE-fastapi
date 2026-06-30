@@ -101,6 +101,30 @@ async def analyze_sync(
 
 
 @router.post(
+    "/analyze/no-ai/sync",
+    response_model=PipelineSuccess | PipelineFailure,
+    summary="전체 파이프라인 — AI 비사용 동기 결과 반환",
+    description=(
+        "run_pipeline 을 AI 추론 없이 동기로 실행합니다. normalize, unchain, threat DB, "
+        "도메인 휴리스틱, 콘텐츠 정적 분석은 수행하지만 OpenAI provider 를 호출하지 않고 "
+        "AI verdict/score 가산 없이 규칙 기반 verdict 와 summary 를 반환합니다."
+    ),
+)
+async def analyze_no_ai_sync(
+    body: AnalyzeSyncRequest,
+    session: DBSession,
+    _: InternalApiKey,
+) -> PipelineSuccess | PipelineFailure:
+    analysis_id = str(uuid.uuid4())
+    return await run_pipeline(
+        analysis_id=analysis_id,
+        original_url=body.url,
+        session=session,
+        use_ai=False,
+    )
+
+
+@router.post(
     "/analyze/db-independent/sync",
     response_model=DbIndependentPipelineSuccess | DbIndependentPipelineFailure,
     summary="DB 비의존 파이프라인 — 동기 결과 반환",

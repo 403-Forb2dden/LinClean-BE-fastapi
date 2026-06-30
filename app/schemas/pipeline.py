@@ -68,6 +68,7 @@ class PipelineSuccess(BaseModel):
     final_url: str
     verdict: Verdict
     score: int = Field(ge=0, le=100)
+    summary: str | None = None
     timings: PipelineTimings | None = None
     stages: PipelineStages
 

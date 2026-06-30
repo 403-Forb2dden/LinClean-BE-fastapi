@@ -32,6 +32,7 @@ from app.schemas.pipeline import (
 )
 from app.schemas.threat_db import ThreatDbResult
 from app.schemas.unchain import UnchainResult
+from app.services.analysis_summary import build_analysis_summary
 from app.services.content_analyzer import analyze_content, skipped_already_danger
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
@@ -196,14 +197,17 @@ async def _stage_content_analysis(
     log: structlog.stdlib.BoundLogger,
     final_url: str,
     upstream_signals: tuple[str, ...],
+    *,
+    use_ai: bool,
 ) -> ContentAnalysisResult:
-    result = await analyze_content(final_url, upstream_signals=upstream_signals)
+    result = await analyze_content(final_url, upstream_signals=upstream_signals, use_ai=use_ai)
     log.info(
         "pipeline.content_analysis.done",
         fetched=result.fetched,
         score=result.score,
         signals=[s.value for s in result.signals],
         ai_verdict=result.ai_verdict.value if result.ai_verdict else None,
+        use_ai=use_ai,
         upstream_signals=list(upstream_signals),
     )
     return result
@@ -289,6 +293,44 @@ def _page_unavailable_failure(
     )
 
 
+def _pipeline_success(
+    *,
+    analysis_id: str,
+    original_url: str,
+    final_url: str,
+    verdict: Verdict,
+    score: int,
+    started: float,
+    stage_timings: PipelineStageTimings,
+    normalize: NormalizeResult,
+    unchain: UnchainResult,
+    threat: ThreatDbResult,
+    heuristic: DomainHeuristicResult,
+    content: ContentAnalysisResult,
+) -> PipelineSuccess:
+    return PipelineSuccess(
+        analysis_id=analysis_id,
+        original_url=original_url,
+        final_url=final_url,
+        verdict=verdict,
+        score=score,
+        summary=build_analysis_summary(
+            verdict=verdict,
+            threat=threat,
+            heuristic=heuristic,
+            content=content,
+        ),
+        timings=_build_timings(started, stage_timings),
+        stages=PipelineStages(
+            normalize=normalize,
+            unchain=unchain,
+            threat_db=threat,
+            domain_heuristic=heuristic,
+            content_analysis=content,
+        ),
+    )
+
+
 async def _run_stage_2_and_3(
     log: structlog.stdlib.BoundLogger,
     final_url: str,
@@ -359,6 +401,8 @@ async def run_pipeline(
     analysis_id: str,
     original_url: str,
     session: AsyncSession,
+    *,
+    use_ai: bool = True,
 ) -> PipelineSuccess | PipelineFailure:
     log = logger.bind(analysis_id=analysis_id)
     log.info("pipeline.start", url=original_url)
@@ -455,20 +499,19 @@ async def run_pipeline(
         score = _total_score(threat, heuristic, content)
         if threat.is_malicious or score >= settings.score_caution_threshold:
             verdict = _decide_verdict(score, threat)
-            return PipelineSuccess(
+            return _pipeline_success(
                 analysis_id=analysis_id,
                 original_url=original_url,
                 final_url=unchain.final_url,
                 verdict=verdict,
                 score=score,
-                timings=_build_timings(total_started, stage_timings),
-                stages=PipelineStages(
-                    normalize=norm,
-                    unchain=unchain,
-                    threat_db=threat,
-                    domain_heuristic=heuristic,
-                    content_analysis=content,
-                ),
+                started=total_started,
+                stage_timings=stage_timings,
+                normalize=norm,
+                unchain=unchain,
+                threat=threat,
+                heuristic=heuristic,
+                content=content,
             )
         return _page_unavailable_failure(
             analysis_id=analysis_id,
@@ -546,7 +589,12 @@ async def run_pipeline(
                     _timed_async_stage(
                         stage_timings,
                         PipelineStage.CONTENT_ANALYSIS,
-                        _stage_content_analysis(log, unchain.final_url, upstream),
+                        _stage_content_analysis(
+                            log,
+                            unchain.final_url,
+                            upstream,
+                            use_ai=use_ai,
+                        ),
                     ),
                     settings.pipeline_content_timeout_seconds,
                 )
@@ -574,20 +622,19 @@ async def run_pipeline(
         score = _total_score(threat, heuristic, content)
         if threat.is_malicious or score >= settings.score_caution_threshold:
             verdict = _decide_verdict(score, threat)
-            return PipelineSuccess(
+            return _pipeline_success(
                 analysis_id=analysis_id,
                 original_url=original_url,
                 final_url=unchain.final_url,
                 verdict=verdict,
                 score=score,
-                timings=_build_timings(total_started, stage_timings),
-                stages=PipelineStages(
-                    normalize=norm,
-                    unchain=unchain,
-                    threat_db=threat,
-                    domain_heuristic=heuristic,
-                    content_analysis=content,
-                ),
+                started=total_started,
+                stage_timings=stage_timings,
+                normalize=norm,
+                unchain=unchain,
+                threat=threat,
+                heuristic=heuristic,
+                content=content,
             )
         return _page_unavailable_failure(
             analysis_id=analysis_id,
@@ -608,18 +655,17 @@ async def run_pipeline(
         verdict=verdict.value,
         score=score,
     )
-    return PipelineSuccess(
+    return _pipeline_success(
         analysis_id=analysis_id,
         original_url=original_url,
         final_url=unchain.final_url,
         verdict=verdict,
         score=score,
-        timings=_build_timings(total_started, stage_timings),
-        stages=PipelineStages(
-            normalize=norm,
-            unchain=unchain,
-            threat_db=threat,
-            domain_heuristic=heuristic,
-            content_analysis=content,
-        ),
+        started=total_started,
+        stage_timings=stage_timings,
+        normalize=norm,
+        unchain=unchain,
+        threat=threat,
+        heuristic=heuristic,
+        content=content,
     )
