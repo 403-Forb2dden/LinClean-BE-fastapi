@@ -21,6 +21,7 @@ from app.schemas.domain_heuristic import (
     DomainHeuristicSkippedReason,
 )
 from app.schemas.normalize import NormalizeResult
+from app.schemas.page_snapshot import PageSnapshotResult
 from app.schemas.pipeline import (
     PipelineFailure,
     PipelineStage,
@@ -36,6 +37,12 @@ from app.services.analysis_summary import build_analysis_summary
 from app.services.content_analyzer import analyze_content, skipped_already_danger
 from app.services.domain_heuristic import check_domain_heuristic
 from app.services.normalizer import normalize_url
+from app.services.page_snapshot import (
+    capture_page_snapshot,
+    failed_page_snapshot,
+    skipped_page_snapshot,
+    timed_out_page_snapshot,
+)
 from app.services.page_unavailability import (
     PAGE_UNAVAILABLE_CODE,
     content_page_unavailable,
@@ -213,6 +220,40 @@ async def _stage_content_analysis(
     return result
 
 
+async def _capture_snapshot_for_pipeline(
+    log: structlog.stdlib.BoundLogger,
+    analysis_id: str,
+    final_url: str,
+) -> PageSnapshotResult:
+    started = time.perf_counter()
+    try:
+        result = await asyncio.wait_for(
+            capture_page_snapshot(analysis_id, final_url),
+            timeout=settings.page_snapshot_timeout_seconds,
+        )
+    except TimeoutError:
+        result = timed_out_page_snapshot(final_url, started)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning(
+            "pipeline.page_snapshot.failed",
+            final_url=final_url,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        result = failed_page_snapshot(final_url, error="snapshot_failed", started=started)
+
+    log.info(
+        "pipeline.page_snapshot.done",
+        status=result.status.value,
+        storage_key=result.storage_key,
+        elapsed_seconds=result.elapsed_seconds,
+        error=result.error,
+    )
+    return result
+
+
 def _preceding_score(threat: ThreatDbResult, heuristic: DomainHeuristicResult) -> int:
     """2~3단계 누적 점수. 4단계 건너뛸지 판단하는 기준."""
     score = heuristic.score
@@ -307,6 +348,7 @@ def _pipeline_success(
     threat: ThreatDbResult,
     heuristic: DomainHeuristicResult,
     content: ContentAnalysisResult,
+    snapshot: PageSnapshotResult | None = None,
 ) -> PipelineSuccess:
     return PipelineSuccess(
         analysis_id=analysis_id,
@@ -320,6 +362,7 @@ def _pipeline_success(
             heuristic=heuristic,
             content=content,
         ),
+        snapshot=snapshot,
         timings=_build_timings(started, stage_timings),
         stages=PipelineStages(
             normalize=normalize,
@@ -499,6 +542,7 @@ async def run_pipeline(
         score = _total_score(threat, heuristic, content)
         if threat.is_malicious or score >= settings.score_caution_threshold:
             verdict = _decide_verdict(score, threat)
+            page_unavailable_snapshot = skipped_page_snapshot(unchain.final_url, "page_unavailable")
             return _pipeline_success(
                 analysis_id=analysis_id,
                 original_url=original_url,
@@ -512,6 +556,7 @@ async def run_pipeline(
                 threat=threat,
                 heuristic=heuristic,
                 content=content,
+                snapshot=page_unavailable_snapshot,
             )
         return _page_unavailable_failure(
             analysis_id=analysis_id,
@@ -557,6 +602,8 @@ async def run_pipeline(
         short_circuited = False
 
     heuristic = _augment_heuristic_with_redirect_signals(heuristic, unchain)
+    snapshot: PageSnapshotResult | None = None
+    snapshot_task: asyncio.Task[PageSnapshotResult] | None = None
 
     if short_circuited:
         log.info(
@@ -568,6 +615,7 @@ async def run_pipeline(
         stage_started = time.perf_counter()
         content = skipped_already_danger(unchain.final_url)
         _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
+        snapshot = skipped_page_snapshot(unchain.final_url, "skipped_already_danger")
     else:
         # known malicious 는 verdict 가 이미 외부 DB 로 확정됐으므로 페이지를 받아보지 않는다.
         # 휴리스틱 danger 는 페이지가 존재하지 않을 수 있으므로 content fetch 로 가용성을 확인한다.
@@ -581,8 +629,12 @@ async def run_pipeline(
             stage_started = time.perf_counter()
             content = skipped_already_danger(unchain.final_url)
             _set_stage_timing(stage_timings, PipelineStage.CONTENT_ANALYSIS, stage_started)
+            snapshot = skipped_page_snapshot(unchain.final_url, "skipped_already_danger")
         else:
             upstream = _collect_upstream_signals(threat, heuristic)
+            snapshot_task = asyncio.create_task(
+                _capture_snapshot_for_pipeline(log, analysis_id, unchain.final_url)
+            )
             try:
                 content = await deadline.run(
                     PipelineStage.CONTENT_ANALYSIS.value,
@@ -610,6 +662,8 @@ async def run_pipeline(
                 )
                 content = timed_out_content_result(unchain.final_url)
 
+            snapshot = await snapshot_task
+
     if unavailable := content_page_unavailable(content):
         message, status_code = unavailable
         log.info(
@@ -635,6 +689,7 @@ async def run_pipeline(
                 threat=threat,
                 heuristic=heuristic,
                 content=content,
+                snapshot=snapshot,
             )
         return _page_unavailable_failure(
             analysis_id=analysis_id,
@@ -668,4 +723,5 @@ async def run_pipeline(
         threat=threat,
         heuristic=heuristic,
         content=content,
+        snapshot=snapshot,
     )

@@ -16,6 +16,7 @@ from app.schemas.db_independent_pipeline import (
 )
 from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSignal, RdapInfo
 from app.schemas.normalize import NormalizeResult
+from app.schemas.page_snapshot import PageSnapshotResult, PageSnapshotStatus
 from app.schemas.pipeline import (
     PipelineFailure,
     PipelineResult,
@@ -47,6 +48,8 @@ __all__ = [
     "GSBResult",
     "HopRecord",
     "NormalizeResult",
+    "PageSnapshotResult",
+    "PageSnapshotStatus",
     "PipelineFailure",
     "PipelineResult",
     "PipelineStage",
