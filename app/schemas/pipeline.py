@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.schemas.content_analysis import ContentAnalysisResult
 from app.schemas.domain_heuristic import DomainHeuristicResult
 from app.schemas.normalize import NormalizeResult
+from app.schemas.page_snapshot import PageSnapshotResult
 from app.schemas.threat_db import ThreatDbResult
 from app.schemas.unchain import UnchainResult
 
@@ -69,6 +70,7 @@ class PipelineSuccess(BaseModel):
     verdict: Verdict
     score: int = Field(ge=0, le=100)
     summary: str | None = None
+    snapshot: PageSnapshotResult | None = None
     timings: PipelineTimings | None = None
     stages: PipelineStages
 

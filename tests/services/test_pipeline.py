@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.schemas.content_analysis import ContentAnalysisResult, ContentSignal
 from app.schemas.domain_heuristic import DomainHeuristicResult, DomainHeuristicSignal
 from app.schemas.normalize import NormalizeResult
+from app.schemas.page_snapshot import PageSnapshotResult, PageSnapshotStatus
 from app.schemas.pipeline import PipelineFailure, PipelineStage, PipelineSuccess, Verdict
 from app.schemas.threat_db import GSBMatch, GSBResult, ThreatDbResult, URLhausResult
 from app.schemas.unchain import HopRecord, UnchainResult
@@ -145,6 +147,150 @@ async def test_run_pipeline_includes_domain_heuristic_stage(async_session: Async
     assert args == (final_url,)
     # _make_heuristic 가 HOSTING_PLATFORM 시그널을 가지므로 그대로 전달돼야 한다
     assert await _resolve_upstream(kwargs["upstream_signals"]) == ("HOSTING_PLATFORM",)
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_no_ai_passes_flag_to_content_analysis(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://example.com/"
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _make_heuristic("example.com")
+        mock_content.return_value = _make_content(final_url)
+
+        result = await run_pipeline("aid-no-ai", final_url, async_session, use_ai=False)
+
+    assert isinstance(result, PipelineSuccess)
+    mock_content.assert_awaited_once()
+    assert mock_content.await_args.kwargs["use_ai"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_includes_available_page_snapshot(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://example.com/"
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch(
+            "app.services.pipeline.capture_page_snapshot", new_callable=AsyncMock
+        ) as mock_snapshot,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _make_heuristic("example.com")
+        mock_content.return_value = _make_content(final_url)
+        mock_snapshot.return_value = PageSnapshotResult(
+            status=PageSnapshotStatus.AVAILABLE,
+            final_url=final_url,
+            storage_key="page-snapshots/aid-snapshot.png",
+            elapsed_seconds=0.25,
+        )
+
+        result = await run_pipeline("aid-snapshot", final_url, async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    assert result.snapshot is not None
+    assert result.snapshot.status == PageSnapshotStatus.AVAILABLE
+    assert result.snapshot.storage_key == "page-snapshots/aid-snapshot.png"
+    assert result.snapshot.elapsed_seconds == 0.25
+    mock_snapshot.assert_awaited_once_with("aid-snapshot", final_url)
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_skips_page_snapshot_when_threat_db_short_circuits(
+    async_session: AsyncSession,
+) -> None:
+    final_url = "https://evil.test/"
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
+        patch(
+            "app.services.pipeline.capture_page_snapshot", new_callable=AsyncMock
+        ) as mock_snapshot,
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _malicious_threat(final_url)
+        mock_heuristic.return_value = _heuristic_with_score(20)
+
+        result = await run_pipeline("aid-skip-snapshot", final_url, async_session)
+
+    assert isinstance(result, PipelineSuccess)
+    assert result.snapshot is not None
+    assert result.snapshot.status == PageSnapshotStatus.SKIPPED
+    assert result.snapshot.error == "skipped_already_danger"
+    mock_snapshot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_times_out_slow_page_snapshot_without_delaying_verdict(
+    async_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    final_url = "https://slow-snapshot.test/"
+    monkeypatch.setattr(settings, "page_snapshot_timeout_seconds", 0.01)
+
+    async def slow_snapshot(_analysis_id: str, _url: str) -> PageSnapshotResult:
+        await asyncio.sleep(5.0)
+        return PageSnapshotResult(
+            status=PageSnapshotStatus.AVAILABLE,
+            final_url=final_url,
+            storage_key="page-snapshots/too-late.png",
+        )
+
+    with (
+        patch("app.services.pipeline.normalize_url") as mock_norm,
+        patch("app.services.pipeline.unchain_url", new_callable=AsyncMock) as mock_unchain,
+        patch("app.services.pipeline.check_threat_db", new_callable=AsyncMock) as mock_threat,
+        patch(
+            "app.services.pipeline.check_domain_heuristic", new_callable=AsyncMock
+        ) as mock_heuristic,
+        patch("app.services.pipeline.analyze_content", new_callable=AsyncMock) as mock_content,
+        patch("app.services.pipeline.capture_page_snapshot", side_effect=slow_snapshot),
+    ):
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
+        mock_unchain.return_value = _make_unchain(final_url)
+        mock_threat.return_value = _make_threat(final_url)
+        mock_heuristic.return_value = _make_heuristic("slow-snapshot.test")
+        mock_content.return_value = _make_content(final_url)
+
+        started = time.perf_counter()
+        result = await run_pipeline("aid-slow-snapshot", final_url, async_session)
+        elapsed = time.perf_counter() - started
+
+    assert isinstance(result, PipelineSuccess)
+    assert result.verdict == Verdict.SAFE
+    assert result.snapshot is not None
+    assert result.snapshot.status == PageSnapshotStatus.TIMEOUT
+    assert result.snapshot.elapsed_seconds is not None
+    assert elapsed < 1.0
 
 
 @pytest.mark.asyncio
@@ -676,9 +822,7 @@ async def test_short_circuit_uses_placeholder_even_when_heuristic_finishes_first
         patch("app.services.pipeline.check_domain_heuristic", side_effect=fast_heuristic),
         patch("app.services.pipeline.analyze_content", new_callable=AsyncMock),
     ):
-        mock_norm.return_value = NormalizeResult(
-            original_url=final_url, normalized_url=final_url
-        )
+        mock_norm.return_value = NormalizeResult(original_url=final_url, normalized_url=final_url)
         mock_unchain.return_value = _make_unchain(final_url)
 
         result = await run_pipeline("aid-race", final_url, async_session)

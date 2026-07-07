@@ -194,6 +194,15 @@ class Settings(BaseSettings):
     content_render_settle_ms: int = 500
     content_render_concurrency: int = 2
 
+    # 사용자 표시용 페이지 스냅샷. 파이프라인 응답 SLA 보호를 위해 동기 경로에서는
+    # 기본 1초까지만 기다리고, 지연/실패는 verdict 와 분리해 상태로만 내려준다.
+    page_snapshot_enabled: bool = True
+    page_snapshot_timeout_seconds: float = 1.0
+    page_snapshot_storage_dir: str = "/private/tmp/linclean-page-snapshots"
+    page_snapshot_viewport_width: int = 1365
+    page_snapshot_viewport_height: int = 768
+    page_snapshot_full_page: bool = False
+
     # 콘텐츠 분석 점수
     score_weight_brand_impersonation: int = 50
     score_weight_logo_alt_impersonation: int = 10
